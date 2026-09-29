@@ -68,6 +68,24 @@ async function main() {
     assert.equal((await request(`/tenants/${keyA}/members/${created.body.id}`, 'PATCH', { active: false }, cookie)).status, 200);
     assert.equal((await request(`/tenants/${keyA}/apps`, 'GET', undefined, salesCookie)).status, 403);
     const erp = `/tenants/${keyA}/erp`;
+    const roleCookies = {};
+    for (const role of ['purchasing', 'warehouse', 'finance']) {
+      const roleEmail = `${role}-${id}@example.test`;
+      assert.equal((await request(`/tenants/${keyA}/members`, 'POST', { email: roleEmail, name: role, password, role }, cookie)).status, 201);
+      const roleLogin = await request('/auth/login', 'POST', { email: roleEmail, password });
+      assert.equal(roleLogin.status, 201);
+      roleCookies[role] = roleLogin.cookie.split(';')[0];
+      assert.equal((await request(`/tenants/${keyA}/members`, 'GET', undefined, roleCookies[role])).status, 403);
+    }
+    assert.equal((await request(`${erp}/purchases`, 'GET', undefined, roleCookies.purchasing)).status, 200);
+    assert.equal((await request(`${erp}/inventory`, 'GET', undefined, roleCookies.purchasing)).status, 403);
+    assert.equal((await request(`${erp}/finance/payables`, 'GET', undefined, roleCookies.purchasing)).status, 403);
+    assert.equal((await request(`${erp}/purchases`, 'GET', undefined, roleCookies.warehouse)).status, 200);
+    assert.equal((await request(`${erp}/inventory`, 'GET', undefined, roleCookies.warehouse)).status, 200);
+    assert.equal((await request(`${erp}/finance/payables`, 'GET', undefined, roleCookies.warehouse)).status, 403);
+    assert.equal((await request(`${erp}/purchases`, 'GET', undefined, roleCookies.finance)).status, 200);
+    assert.equal((await request(`${erp}/finance/payables`, 'GET', undefined, roleCookies.finance)).status, 200);
+    assert.equal((await request(`${erp}/inventory`, 'GET', undefined, roleCookies.finance)).status, 403);
     const product = await request(`${erp}/products`, 'POST', { sku: `SKU-${id}`, name: 'Test component', salePrice: '20.00', purchasePrice: '10.00', reorderPoint: 2 }, cookie);
     assert.equal(product.status, 201, JSON.stringify(product.body));
     const supplier = await request(`${erp}/suppliers`, 'POST', { code: `SUP-${id}`, name: 'Test supplier' }, cookie);
@@ -321,7 +339,7 @@ async function main() {
       await db.tenant.deleteMany({ where: { id: { in: tenantIds } } });
     }
     if (user) {
-      const emails = [email, `sales-${id}@example.test`];
+      const emails = [email, `sales-${id}@example.test`, ...['purchasing', 'warehouse', 'finance'].map(role => `${role}-${id}@example.test`)];
       const users = await db.user.findMany({ where: { email: { in: emails } }, select: { id: true } });
       await db.session.deleteMany({ where: { userId: { in: users.map(x => x.id) } } });
       await db.user.deleteMany({ where: { id: { in: users.map(x => x.id) } } });
