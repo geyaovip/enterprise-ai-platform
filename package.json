@@ -1,0 +1,16 @@
+{
+  "name": "enterprise-ai-platform",
+  "version": "0.1.0",
+  "private": true,
+  "packageManager": "pnpm@11.19.0",
+  "engines": { "node": ">=24.15 <25" },
+  "scripts": {
+    "dev:api": "pnpm --filter @suite/api dev",
+    "dev:web": "pnpm --filter @suite/web dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck",
+    "db:generate": "pnpm --filter @suite/api db:generate",
+    "db:deploy": "pnpm --filter @suite/api db:deploy",
+    "db:migrate": "pnpm --filter @suite/api db:migrate"
+  }
+}

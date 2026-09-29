@@ -1,0 +1,40 @@
+{
+  "name": "@suite/api",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "pnpm build && node dist/main.js",
+    "build": "prisma generate && tsc -p tsconfig.json",
+    "typecheck": "prisma generate && tsc --noEmit -p tsconfig.json",
+    "start": "node dist/main.js",
+    "start:worker": "node dist/worker.js",
+    "db:generate": "prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "db:migrate": "prisma migrate dev",
+    "test:m1": "tsx tests/m1-smoke.ts",
+    "test:platform": "pnpm build && node tests/platform-flow.cjs",
+    "bootstrap": "tsx src/bootstrap.ts"
+  },
+  "dependencies": {
+    "@nestjs/common": "11.2.6",
+    "@nestjs/core": "11.2.6",
+    "@nestjs/platform-express": "11.2.6",
+    "@prisma/adapter-pg": "7.10.0",
+    "@prisma/client": "7.10.0",
+    "cookie-parser": "1.4.7",
+    "dotenv": "18.0.4",
+    "pg": "8.23.0",
+    "reflect-metadata": "0.2.2",
+    "rxjs": "7.8.2",
+    "zod": "4.6.5"
+  },
+  "devDependencies": {
+    "@types/cookie-parser": "1.4.10",
+    "@types/express": "5.0.6",
+    "@types/node": "24.19.0",
+    "@types/pg": "8.23.1",
+    "prisma": "7.10.0",
+    "tsx": "4.23.15",
+    "typescript": "5.9.3"
+  }
+}

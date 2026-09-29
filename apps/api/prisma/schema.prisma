@@ -1,0 +1,403 @@
+generator client {
+  provider     = "prisma-client"
+  output       = "../src/generated/prisma"
+  moduleFormat = "cjs"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  slug      String   @unique
+  name      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  members   Membership[]
+  orgUnits  OrgUnit[]
+  apps      TenantApp[]
+  audits    AuditEvent[]
+}
+
+model User {
+  id           String       @id @default(uuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  active       Boolean      @default(true)
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+  sessions     Session[]
+}
+
+model Membership {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  role      String
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  orgs      MembershipOrg[]
+  @@unique([tenantId, userId])
+  @@unique([id, tenantId])
+  @@index([userId, active])
+}
+
+model OrgUnit {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  parentId  String?
+  parent    OrgUnit? @relation("OrgTree", fields: [parentId], references: [id])
+  children  OrgUnit[] @relation("OrgTree")
+  name      String
+  active    Boolean  @default(true)
+  version   Int      @default(1)
+  createdAt DateTime @default(now())
+  members   MembershipOrg[]
+  @@unique([id, tenantId])
+  @@index([tenantId, parentId])
+}
+
+model MembershipOrg {
+  tenantId     String
+  membershipId String
+  membership   Membership @relation(fields: [membershipId, tenantId], references: [id, tenantId])
+  orgUnitId    String
+  orgUnit      OrgUnit    @relation(fields: [orgUnitId, tenantId], references: [id, tenantId])
+  primary      Boolean    @default(false)
+  @@id([membershipId, orgUnitId])
+  @@index([tenantId, orgUnitId])
+}
+
+model TenantApp {
+  id        String   @id @default(uuid())
+  tenantId  String
+  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  appId     String
+  enabled   Boolean  @default(true)
+  createdAt DateTime @default(now())
+  @@unique([tenantId, appId])
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([userId, expiresAt])
+}
+
+model AuditEvent {
+  id           String   @id @default(uuid())
+  tenantId     String
+  tenant       Tenant   @relation(fields: [tenantId], references: [id])
+  userId       String
+  membershipId String
+  appId        String
+  requestId    String
+  action       String
+  resourceType String
+  resourceId   String
+  detail       Json?
+  createdAt    DateTime @default(now())
+  @@index([tenantId, appId, resourceType, resourceId, createdAt])
+  @@index([requestId])
+}
+
+model ErpCustomer {
+  id                String   @id @default(uuid())
+  tenantId          String
+  code              String
+  name              String
+  contactName       String?
+  phone             String?
+  industry          String?
+  ownerMembershipId String
+  active            Boolean  @default(true)
+  createdAt         DateTime @default(now())
+  opportunities     ErpOpportunity[]
+  contracts         ErpSalesContract[]
+  @@unique([tenantId, code])
+  @@index([tenantId, ownerMembershipId])
+}
+
+model ErpOpportunity {
+  id                String   @id @default(uuid())
+  tenantId          String
+  customerId        String
+  customer          ErpCustomer @relation(fields: [customerId], references: [id])
+  name              String
+  stage             String   @default("discovery")
+  estimatedAmount   Decimal  @db.Decimal(18, 2)
+  ownerMembershipId String
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  contracts         ErpSalesContract[]
+  @@index([tenantId, ownerMembershipId, stage])
+}
+
+model ErpProduct {
+  id            String   @id @default(uuid())
+  tenantId      String
+  sku           String
+  name          String
+  category      String?
+  unit          String   @default("件")
+  salePrice     Decimal  @db.Decimal(18, 2)
+  purchasePrice Decimal  @db.Decimal(18, 2)
+  reorderPoint  Int      @default(0)
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  balance       ErpInventoryBalance?
+  purchaseLines ErpPurchaseLine[]
+  salesLines    ErpSalesLine[]
+  @@unique([tenantId, sku])
+}
+
+model ErpSupplier {
+  id          String   @id @default(uuid())
+  tenantId    String
+  code        String
+  name        String
+  contactName String?
+  phone       String?
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  purchases   ErpPurchaseOrder[]
+  @@unique([tenantId, code])
+}
+
+model ErpPurchaseOrder {
+  id                  String   @id @default(uuid())
+  tenantId            String
+  number              String
+  supplierId          String
+  supplier            ErpSupplier @relation(fields: [supplierId], references: [id])
+  status              String   @default("draft")
+  total               Decimal  @db.Decimal(18, 2)
+  note                String?
+  version             Int      @default(1)
+  createdByMembershipId String
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  lines               ErpPurchaseLine[]
+  payable             ErpPayable?
+  @@unique([tenantId, number])
+  @@index([tenantId, status])
+}
+
+model ErpPurchaseLine {
+  id           String   @id @default(uuid())
+  orderId      String
+  order        ErpPurchaseOrder @relation(fields: [orderId], references: [id])
+  productId    String
+  product      ErpProduct @relation(fields: [productId], references: [id])
+  sku          String
+  name         String
+  quantity     Int
+  receivedQty  Int      @default(0)
+  unitPrice    Decimal  @db.Decimal(18, 2)
+  lineTotal    Decimal  @db.Decimal(18, 2)
+}
+
+model ErpSalesContract {
+  id                String   @id @default(uuid())
+  tenantId          String
+  number            String
+  customerId        String
+  customer          ErpCustomer @relation(fields: [customerId], references: [id])
+  opportunityId     String?
+  opportunity       ErpOpportunity? @relation(fields: [opportunityId], references: [id])
+  ownerMembershipId String
+  status            String   @default("draft")
+  total             Decimal  @db.Decimal(18, 2)
+  note              String?
+  version           Int      @default(1)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  lines             ErpSalesLine[]
+  receivable        ErpReceivable?
+  @@unique([tenantId, number])
+  @@index([tenantId, ownerMembershipId, status])
+}
+
+model ErpSalesLine {
+  id          String   @id @default(uuid())
+  contractId  String
+  contract    ErpSalesContract @relation(fields: [contractId], references: [id])
+  productId   String
+  product     ErpProduct @relation(fields: [productId], references: [id])
+  sku         String
+  name        String
+  quantity    Int
+  shippedQty  Int      @default(0)
+  unitPrice   Decimal  @db.Decimal(18, 2)
+  lineTotal   Decimal  @db.Decimal(18, 2)
+}
+
+model ErpInventoryBalance {
+  id        String   @id @default(uuid())
+  tenantId  String
+  productId String   @unique
+  product   ErpProduct @relation(fields: [productId], references: [id])
+  quantity  Int      @default(0)
+  version   Int      @default(1)
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, productId])
+}
+
+model ErpStockDocument {
+  id                 String   @id @default(uuid())
+  tenantId           String
+  number             String
+  kind               String
+  sourceId           String
+  note               String?
+  actorMembershipId  String
+  createdAt          DateTime @default(now())
+  movements          ErpStockMovement[]
+  @@unique([tenantId, number])
+  @@index([tenantId, kind, sourceId, createdAt])
+}
+
+model ErpStockMovement {
+  id                String   @id @default(uuid())
+  tenantId          String
+  productId         String
+  direction         String
+  quantity          Int
+  sourceType        String
+  sourceId          String
+  documentId        String
+  document          ErpStockDocument @relation(fields: [documentId], references: [id])
+  actorMembershipId String
+  createdAt         DateTime @default(now())
+  @@unique([tenantId, documentId, productId])
+  @@index([tenantId, productId, createdAt])
+}
+
+model ErpPayable {
+  id         String   @id @default(uuid())
+  tenantId   String
+  orderId    String   @unique
+  order      ErpPurchaseOrder @relation(fields: [orderId], references: [id])
+  amount     Decimal  @db.Decimal(18, 2)
+  paidAmount Decimal  @default(0) @db.Decimal(18, 2)
+  status     String   @default("open")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  payments   ErpPayment[] @relation("PayablePayments")
+  @@index([tenantId, status])
+}
+
+model ErpReceivable {
+  id         String   @id @default(uuid())
+  tenantId   String
+  contractId String   @unique
+  contract   ErpSalesContract @relation(fields: [contractId], references: [id])
+  amount     Decimal  @db.Decimal(18, 2)
+  paidAmount Decimal  @default(0) @db.Decimal(18, 2)
+  status     String   @default("open")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  payments   ErpPayment[] @relation("ReceivablePayments")
+  @@index([tenantId, status])
+}
+
+model ErpPayment {
+  id                String   @id @default(uuid())
+  tenantId          String
+  receivableId      String?
+  receivable        ErpReceivable? @relation("ReceivablePayments", fields: [receivableId], references: [id])
+  payableId         String?
+  payable           ErpPayable? @relation("PayablePayments", fields: [payableId], references: [id])
+  amount            Decimal  @db.Decimal(18, 2)
+  reference         String
+  actorMembershipId String
+  createdAt         DateTime @default(now())
+  @@unique([tenantId, receivableId, reference])
+  @@unique([tenantId, payableId, reference])
+}
+
+model AiProviderSettings {
+  tenantId      String   @id
+  model         String
+  baseUrl       String
+  keyCiphertext String
+  updatedBy     String
+  updatedAt     DateTime @updatedAt
+}
+
+model AiConversation {
+  id           String   @id @default(uuid())
+  tenantId     String
+  userId       String
+  appId        String
+  resourceType String?
+  resourceId   String?
+  title        String
+  messages     Json     @default("[]")
+  version      Int      @default(1)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@index([tenantId, userId, appId, updatedAt])
+}
+
+model AiAction {
+  id                   String   @id @default(uuid())
+  tenantId             String
+  userId               String
+  membershipId         String
+  appId                String
+  conversationId       String
+  toolId               String
+  input                Json
+  status               String
+  confirmationRequired Boolean
+  result               Json?
+  errorCode            String?
+  idempotencyKey       String
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  @@unique([tenantId, idempotencyKey])
+  @@index([tenantId, userId, status, createdAt])
+}
+
+model AiUsage {
+  id           String   @id @default(uuid())
+  tenantId     String
+  userId       String
+  appId        String
+  model        String
+  inputTokens  Int?
+  outputTokens Int?
+  status       String
+  createdAt    DateTime @default(now())
+  @@index([tenantId, appId, createdAt])
+}
+
+model AiTask {
+  id           String    @id @default(uuid())
+  tenantId     String
+  userId       String
+  membershipId String
+  appId        String
+  kind         String
+  input        Json
+  status       String    @default("queued")
+  result       Json?
+  errorCode    String?
+  attempts     Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  startedAt    DateTime?
+  finishedAt   DateTime?
+  @@index([status, createdAt])
+  @@index([tenantId, userId, appId, createdAt])
+}

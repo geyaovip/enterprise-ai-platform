@@ -1,0 +1,10 @@
+**/node_modules
+**/dist
+**/src/generated
+.git
+.env
+.env.*
+!.env.example
+.playwright-cli
+output
+**/*.tsbuildinfo
