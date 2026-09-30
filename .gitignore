@@ -2,4 +2,5 @@ apps/api/src/generated/
 !.env.production.example
 .playwright-cli/
 output/backups/
+output/playwright/
 *.tsbuildinfo
