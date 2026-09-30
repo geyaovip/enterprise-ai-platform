@@ -56,12 +56,41 @@ export class SalesService {
   }
 
   async confirm(ctx: RequestContext, id: string, body: unknown) {
+    this.auth.require(ctx, 'erp.sales.approve');
+    const { version } = readBody(z.object({ version: z.int().positive() }), body);
+    return this.db.$transaction(async tx => {
+      const current = await tx.erpSalesContract.findFirst({ where: { id, tenantId: ctx.tenantId, version }, select: { status: true, ownerMembershipId: true } });
+      if (!current || !['pending_approval', 'draft'].includes(current.status)) conflict('合同状态或版本已变化');
+      if (current.status === 'draft' && current.ownerMembershipId !== ctx.membershipId) conflict('合同需由发起人提交审核');
+      if (current.status === 'pending_approval' && current.ownerMembershipId === ctx.membershipId) conflict('合同不能由发起人自行审核');
+      const changed = await tx.erpSalesContract.updateMany({ where: { id, tenantId: ctx.tenantId, status: current.status, version }, data: { status: 'confirmed', version: { increment: 1 } } });
+      if (!changed.count) conflict('合同状态或版本已变化');
+      await audit(tx, ctx, 'erp.contract.confirm', 'SalesContract', id, { administratorDirectConfirm: current.status === 'draft' });
+      return tx.erpSalesContract.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+    });
+  }
+
+  async submit(ctx: RequestContext, id: string, body: unknown) {
     this.auth.require(ctx, 'erp.sales.write');
     const { version } = readBody(z.object({ version: z.int().positive() }), body);
     return this.db.$transaction(async tx => {
-      const changed = await tx.erpSalesContract.updateMany({ where: { id, tenantId: ctx.tenantId, ...ownerFilter(ctx), status: 'draft', version }, data: { status: 'confirmed', version: { increment: 1 } } });
-      if (!changed.count) conflict('合同状态或版本已变化');
-      await audit(tx, ctx, 'erp.contract.confirm', 'SalesContract', id);
+      const changed = await tx.erpSalesContract.updateMany({ where: { id, tenantId: ctx.tenantId, ownerMembershipId: ctx.membershipId, status: 'draft', version }, data: { status: 'pending_approval', version: { increment: 1 } } });
+      if (!changed.count) conflict('仅发起人可提交当前合同草稿审核，或单据已变化');
+      await audit(tx, ctx, 'erp.contract.submit', 'SalesContract', id);
+      return tx.erpSalesContract.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+    });
+  }
+
+  async reject(ctx: RequestContext, id: string, body: unknown) {
+    this.auth.require(ctx, 'erp.sales.approve');
+    const { version, reason } = readBody(z.object({ version: z.int().positive(), reason: label(500) }), body);
+    return this.db.$transaction(async tx => {
+      const current = await tx.erpSalesContract.findFirst({ where: { id, tenantId: ctx.tenantId, status: 'pending_approval', version }, select: { ownerMembershipId: true } });
+      if (!current) conflict('合同审核状态或版本已变化');
+      if (current.ownerMembershipId === ctx.membershipId) conflict('合同不能由发起人自行审核');
+      const changed = await tx.erpSalesContract.updateMany({ where: { id, tenantId: ctx.tenantId, status: 'pending_approval', version }, data: { status: 'draft', version: { increment: 1 } } });
+      if (!changed.count) conflict('合同审核状态或版本已变化');
+      await audit(tx, ctx, 'erp.contract.reject', 'SalesContract', id, { reason });
       return tx.erpSalesContract.findUniqueOrThrow({ where: { id }, include: { lines: true } });
     });
   }

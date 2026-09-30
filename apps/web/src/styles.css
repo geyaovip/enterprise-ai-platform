@@ -2,3 +2,31 @@
 
 .action-consent{display:flex;align-items:flex-start;gap:.45rem;font-size:.82rem;color:#50617a;line-height:1.4}.action-consent input{margin:.1rem 0 0;flex:none}
 .account-actions{display:flex;align-items:flex-start;gap:.6rem;flex-wrap:wrap}.account-actions summary{cursor:pointer;color:#2457cd}.payment-history{list-style:none;margin:.5rem 0 0;padding:0;min-width:210px;white-space:normal}.payment-history li{display:flex;flex-direction:column;gap:.2rem;padding:.55rem 0;border-bottom:1px solid #edf1f7}.payment-history li:last-child{border-bottom:0}.payment-history span{font-size:.78rem;color:#52627a}
+/* Purchase order prints use the authenticated detail response already on screen. */
+.purchase-print-sheet{display:none}
+.status-pending_approval{background:#fff3d7;color:#95660c}
+@media print{
+  @page{size:A4;margin:16mm}
+  body *{visibility:hidden!important}
+  .purchase-print-sheet,.purchase-print-sheet *{visibility:visible!important}
+  .purchase-print-sheet{display:block;position:absolute;left:0;top:0;width:100%;padding:0;color:#111;background:#fff;font-size:12pt}
+  .purchase-print-sheet h1{text-align:center;font-size:22pt;margin:0 0 10mm}
+  .purchase-print-sheet p{color:#111}
+  .purchase-print-meta{display:grid;grid-template-columns:1fr 1fr;gap:2mm 8mm;margin-bottom:8mm}
+  .purchase-print-meta p{margin:0;color:#111}
+  .purchase-print-sheet table{white-space:normal;border-collapse:collapse}
+  .purchase-print-sheet th,.purchase-print-sheet td{border:1px solid #777;padding:3mm;color:#111;background:#fff}
+  .purchase-print-total{text-align:right;margin:6mm 0;color:#111;font-weight:700}
+  .purchase-print-footnote{margin-top:15mm;color:#555;font-size:9pt}
+}
+.channel-panel { display: grid; gap: 18px; }
+.channel-heading { display: flex; justify-content: space-between; gap: 16px; align-items: start; }
+.channel-heading h2 { margin-top: 0; }
+.channel-heading p { margin-bottom: 0; }
+.channel-steps { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; border-top: 1px solid var(--border, #e3e8ee); padding-top: 16px; }
+.channel-steps p, .channel-steps h3 { flex-basis: 100%; margin: 0; }
+.channel-qr { display: grid; justify-items: start; gap: 12px; }
+.channel-qr h3 { margin: 0; }
+.channel-qr svg { background: #fff; padding: 10px; border: 1px solid #dde4eb; border-radius: 12px; box-sizing: content-box; }
+.channel-pair { flex-basis: 100%; border: 1px solid #d9e4ee; background: #f6fafc; border-radius: 12px; padding: 16px; }
+.channel-pair strong { font-size: 1.3rem; letter-spacing: .12em; font-variant-numeric: tabular-nums; }

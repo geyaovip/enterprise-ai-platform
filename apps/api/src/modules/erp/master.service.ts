@@ -6,8 +6,8 @@ import type { RequestContext } from '../platform/context';
 import { readBody } from '../platform/security';
 import { audit, conflict, decimal, failNotFound, label, money, ownerFilter, pageQuery } from './erp.common';
 
-const customerInput = z.object({ code: label(60), name: label(), contactName: z.string().trim().max(100).optional(), phone: z.string().trim().max(50).optional(), industry: z.string().trim().max(100).optional() });
-const customerPatch = customerInput.omit({ code: true }).partial().extend({ active: z.boolean().optional() });
+const customerInput = z.object({ code: label(60), name: label(), contactName: z.string().trim().max(100).optional(), phone: z.string().trim().max(50).optional(), industry: z.string().trim().max(100).optional(), inPool: z.boolean().optional() });
+const customerPatch = customerInput.omit({ code: true, inPool: true }).partial().extend({ active: z.boolean().optional() });
 const productInput = z.object({ sku: label(80), name: label(), category: z.string().trim().max(100).optional(), unit: z.literal('件').default('件'), salePrice: money, purchasePrice: money, reorderPoint: z.int().min(0).default(0) });
 const productPatch = productInput.omit({ sku: true, unit: true }).partial().extend({ active: z.boolean().optional() });
 const supplierInput = z.object({ code: label(60), name: label(), contactName: z.string().trim().max(100).optional(), phone: z.string().trim().max(50).optional() });
@@ -30,6 +30,27 @@ export class MasterService {
     return { items, total, page: q.page, page_size: q.page_size };
   }
 
+  async customerPool(ctx: RequestContext, query: unknown) {
+    this.role(ctx, ['admin', 'sales']);
+    const q = readBody(pageQuery, query);
+    const where = { tenantId: ctx.tenantId, ownerMembershipId: null, active: true, ...(q.q ? { OR: [{ name: { contains: q.q, mode: 'insensitive' as const } }, { code: { contains: q.q, mode: 'insensitive' as const } }] } : {}) };
+    const [items, total] = await this.db.$transaction([
+      this.db.erpCustomer.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.page_size, take: q.page_size }),
+      this.db.erpCustomer.count({ where }),
+    ]);
+    return { items, total, page: q.page, page_size: q.page_size };
+  }
+
+  async claimCustomer(ctx: RequestContext, id: string) {
+    this.role(ctx, ['admin', 'sales']);
+    return this.db.$transaction(async tx => {
+      const changed = await tx.erpCustomer.updateMany({ where: { id, tenantId: ctx.tenantId, active: true, ownerMembershipId: null }, data: { ownerMembershipId: ctx.membershipId } });
+      if (!changed.count) conflict('客户已被领用、停用或不在当前企业公海');
+      await audit(tx, ctx, 'erp.customer.claim', 'Customer', id);
+      return tx.erpCustomer.findUniqueOrThrow({ where: { id } });
+    });
+  }
+
   async customer(ctx: RequestContext, id: string) {
     this.role(ctx, ['admin', 'sales', 'finance']);
     const item = await this.db.erpCustomer.findFirst({ where: { id, tenantId: ctx.tenantId, ...ownerFilter(ctx) } });
@@ -44,9 +65,11 @@ export class MasterService {
   async createCustomer(ctx: RequestContext, body: unknown) {
     this.role(ctx, ['admin', 'sales']);
     const input = readBody(customerInput, body);
+    if (input.inPool && !ctx.roles.includes('admin')) throw new ForbiddenException('只有管理员可以添加公海客户');
     return this.db.$transaction(async tx => {
-      const item = await tx.erpCustomer.create({ data: { tenantId: ctx.tenantId, ...input, ownerMembershipId: ctx.membershipId } });
-      await audit(tx, ctx, 'erp.customer.create', 'Customer', item.id);
+      const { inPool, ...customer } = input;
+      const item = await tx.erpCustomer.create({ data: { tenantId: ctx.tenantId, ...customer, ownerMembershipId: inPool ? null : ctx.membershipId } });
+      await audit(tx, ctx, 'erp.customer.create', 'Customer', item.id, { inPool: Boolean(inPool) });
       return item;
     });
   }
@@ -97,6 +120,33 @@ export class MasterService {
       const item = await tx.erpOpportunity.update({ where: { id }, data: { stage: input.stage } });
       await audit(tx, ctx, 'erp.opportunity.stage', 'Opportunity', id, { from: old.stage, to: input.stage });
       return item;
+    });
+  }
+
+  async opportunityFollowups(ctx: RequestContext, id: string, query: unknown) {
+    this.role(ctx, ['admin', 'sales', 'finance']);
+    const q = readBody(pageQuery, query);
+    const opportunity = await this.db.erpOpportunity.findFirst({ where: { id, tenantId: ctx.tenantId, ...ownerFilter(ctx) }, select: { id: true } });
+    if (!opportunity) failNotFound('商机');
+    const where = { tenantId: ctx.tenantId, opportunityId: id };
+    const [items, total] = await this.db.$transaction([
+      this.db.erpOpportunityFollowup.findMany({ where, orderBy: { createdAt: 'desc' }, skip: (q.page - 1) * q.page_size, take: q.page_size }),
+      this.db.erpOpportunityFollowup.count({ where }),
+    ]);
+    const actors = await this.db.membership.findMany({ where: { tenantId: ctx.tenantId, id: { in: [...new Set(items.map(item => item.actorMembershipId))] } }, include: { user: { select: { name: true } } } });
+    return { items: items.map(item => ({ ...item, actorName: actors.find(actor => actor.id === item.actorMembershipId)?.user.name ?? '已离职成员' })), total, page: q.page, page_size: q.page_size };
+  }
+
+  async createOpportunityFollowup(ctx: RequestContext, id: string, body: unknown) {
+    this.role(ctx, ['admin', 'sales']);
+    const input = readBody(z.object({ note: label(2000), nextActionAt: z.iso.datetime({ offset: true }).optional() }), body);
+    return this.db.$transaction(async tx => {
+      const opportunity = await tx.erpOpportunity.findFirst({ where: { id, tenantId: ctx.tenantId, ...ownerFilter(ctx) }, select: { id: true, stage: true } });
+      if (!opportunity) failNotFound('商机');
+      if (['won', 'lost'].includes(opportunity.stage) && input.nextActionAt) conflict('已结束商机不能再安排跟进时间');
+      const item = await tx.erpOpportunityFollowup.create({ data: { tenantId: ctx.tenantId, opportunityId: id, actorMembershipId: ctx.membershipId, note: input.note, nextActionAt: input.nextActionAt ? new Date(input.nextActionAt) : null } });
+      await audit(tx, ctx, 'erp.opportunity.followup', 'Opportunity', id, { followupId: item.id, nextActionAt: input.nextActionAt ?? null });
+      return { ...item, actorName: (await tx.user.findUnique({ where: { id: ctx.userId }, select: { name: true } }))?.name ?? '' };
     });
   }
 

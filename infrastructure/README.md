@@ -23,6 +23,14 @@ docker compose --env-file .env.production -f infrastructure/compose.production.y
 
 首次空库时可跳过第一条备份命令；已有客户数据或任何迁移升级前必须先备份，并将备份及其校验值转移到受限的异地存储。`migrate` 是一次性容器，完成后应显示退出码 0；`api`、`worker`、`postgres` 应健康，`web` 应运行。确认公网 `https://<SITE_ADDRESS>/api/v1/health` 返回就绪，再以授权账号检查当前企业、ERP 只读及受控写入、审计和 AI 模型状态。
 
+### 共享服务器与 Cloudflare Worker 入口
+
+当 80/443 已由同机共享 HTTPS 网关占用时，叠加 `compose.shared-server.yaml`：只启动新项目的 PostgreSQL、迁移、API 和 Worker；`web` 进入 `standalone-web` profile，不会抢占端口。API 同时接入共享网关所在的 `yingchuan_backend` Docker 网络。该文件只适用于已经核对该网络及网关的这台共享服务器；其他环境使用上面的通用 Compose。
+
+共享网关为新平台添加独立路径 `/apaas-platform/*`，转发到 `enterprise-ai-platform-api-1:4600` 并去掉路径前缀。修改网关前备份其当前配置，先验证再热加载，随后同时复测旧应用和新平台的健康接口；新平台发布不应重建网关或旧应用容器。
+
+Cloudflare 入口使用项目根目录的 `wrangler.jsonc` 和 `cloudflare/worker.js`：静态文件来自 `apps/web/dist`，`/api/*` 由 Worker 转发到共享网关的 `https://.../apaas-platform/api/*`。先构建 Web，再用 `wrangler deploy --dry-run` 校验，配置该 Worker 专属的 `API_ORIGIN` Secret 后发布。生产 `WEB_ORIGIN` 必须是最终 `https://<worker>.workers.dev` 来源。源代码和密钥分别管理；不要把 `.env.production`、Cloudflare 凭据或模型密钥提交到 Git。
+
 首次创建租户时，由发布操作者在受限 shell 中设置 `BOOTSTRAP_EMAIL`、`BOOTSTRAP_PASSWORD`、`BOOTSTRAP_TENANT_SLUG`、`BOOTSTRAP_TENANT_NAME`，再执行：
 
 ```sh

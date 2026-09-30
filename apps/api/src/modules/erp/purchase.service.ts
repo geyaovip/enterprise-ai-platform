@@ -3,16 +3,17 @@ import { z } from 'zod';
 import { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
+import { ChannelService } from '../platform/channel.service';
 import type { RequestContext } from '../platform/context';
 import { readBody } from '../platform/security';
 import { audit, conflict, failNotFound, label, pageQuery, positiveQty, storedMoney } from './erp.common';
 
-const orderInput = z.object({ number: label(80), supplierId: z.uuid(), note: z.string().max(2000).optional(), lines: z.array(z.object({ productId: z.uuid(), quantity: positiveQty })).min(1).max(100) }).refine(x => new Set(x.lines.map(l => l.productId)).size === x.lines.length, '同一商品不能重复');
+const orderInput = z.object({ number: label(80), supplierId: z.uuid(), note: z.string().max(2000).optional(), lines: z.array(z.object({ productId: z.uuid(), quantity: positiveQty })).min(1).max(100), sourceInventory: z.object({ productId: z.uuid(), balanceVersion: z.int().positive(), reorderPoint: z.int().positive(), incomingQty: z.int().min(0), suggestedOrderQty: z.int().positive() }).optional() }).refine(x => new Set(x.lines.map(l => l.productId)).size === x.lines.length, '同一商品不能重复');
 const batchInput = z.object({ version: z.int().positive(), documentNumber: label(80).optional(), note: z.string().max(2000).optional(), lines: z.array(z.object({ lineId: z.uuid(), quantity: positiveQty })).min(1).max(100).optional() }).refine(x => !x.lines || new Set(x.lines.map(l => l.lineId)).size === x.lines.length, '同一明细不能重复');
 
 @Injectable()
 export class PurchaseService {
-  constructor(private readonly db: PrismaService, private readonly auth: AuthService) {}
+  constructor(private readonly db: PrismaService, private readonly auth: AuthService, private readonly channels: ChannelService) {}
 
   async list(ctx: RequestContext, query: unknown) {
     this.auth.require(ctx, 'erp.purchase.read');
@@ -45,20 +46,66 @@ export class PurchaseService {
     });
     const total = storedMoney(lines.reduce((sum, x) => sum.plus(x.lineTotal), new Prisma.Decimal(0)));
     return this.db.$transaction(async tx => {
+      if (input.sourceInventory) {
+        const source = input.sourceInventory;
+        if (!input.lines.some(line => line.productId === source.productId)) conflict('预警商品不在采购明细中');
+        const balance = await tx.erpInventoryBalance.findFirst({ where: { tenantId: ctx.tenantId, productId: source.productId }, include: { product: { select: { reorderPoint: true, active: true } } } });
+        if (!balance || !balance.product.active || balance.version !== source.balanceVersion || balance.product.reorderPoint !== source.reorderPoint || balance.quantity > source.reorderPoint) conflict('库存预警已变化，请返回库存页刷新后重试');
+        const pending = await tx.erpPurchaseLine.findMany({ where: { productId: source.productId, order: { tenantId: ctx.tenantId, status: { in: ['ordered', 'partial_received'] } } }, select: { quantity: true, receivedQty: true } });
+        const incomingQty = pending.reduce((sum, line) => sum + line.quantity - line.receivedQty, 0);
+        const suggestedOrderQty = Math.max(0, source.reorderPoint + 1 - balance.quantity - incomingQty);
+        if (incomingQty !== source.incomingQty || suggestedOrderQty !== source.suggestedOrderQty || suggestedOrderQty === 0) conflict('采购在途量已变化，请返回库存页刷新后重试');
+      }
       const item = await tx.erpPurchaseOrder.create({ data: { tenantId: ctx.tenantId, number: input.number, supplierId: supplier.id, total, note: input.note, createdByMembershipId: ctx.membershipId, lines: { create: lines } }, include: { lines: true } });
-      await audit(tx, ctx, 'erp.purchase.create', 'PurchaseOrder', item.id, { total: total.toFixed(2) });
+      await audit(tx, ctx, 'erp.purchase.create', 'PurchaseOrder', item.id, { total: total.toFixed(2), ...(input.sourceInventory ? { sourceInventory: input.sourceInventory } : {}) });
       return item;
     });
   }
 
   async confirm(ctx: RequestContext, id: string, body: unknown) {
+    this.auth.require(ctx, 'erp.purchase.approve');
+    const { version } = readBody(z.object({ version: z.int().positive() }), body);
+    return this.db.$transaction(async tx => {
+      const current = await tx.erpPurchaseOrder.findFirst({ where: { id, tenantId: ctx.tenantId, version }, select: { status: true, createdByMembershipId: true } });
+      if (!current || !['pending_approval', 'draft'].includes(current.status)) conflict('采购单状态或版本已变化');
+      if (current.status === 'draft' && current.createdByMembershipId !== ctx.membershipId) conflict('采购单需由发起人提交审核');
+      if (current.status === 'pending_approval' && current.createdByMembershipId === ctx.membershipId) conflict('采购单不能由发起人自行审核');
+      const changed = await tx.erpPurchaseOrder.updateMany({ where: { id, tenantId: ctx.tenantId, status: current.status, version }, data: { status: 'ordered', version: { increment: 1 } } });
+      if (!changed.count) conflict('采购单状态或版本已变化');
+      await audit(tx, ctx, 'erp.purchase.confirm', 'PurchaseOrder', id, { administratorDirectConfirm: current.status === 'draft' });
+      const order = await tx.erpPurchaseOrder.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      await this.channels.queuePurchase(tx, ctx, id, order.number, order.version, 'approved', [current.createdByMembershipId]);
+      return order;
+    });
+  }
+
+  async submit(ctx: RequestContext, id: string, body: unknown) {
     this.auth.require(ctx, 'erp.purchase.write');
     const { version } = readBody(z.object({ version: z.int().positive() }), body);
     return this.db.$transaction(async tx => {
-      const changed = await tx.erpPurchaseOrder.updateMany({ where: { id, tenantId: ctx.tenantId, status: 'draft', version }, data: { status: 'ordered', version: { increment: 1 } } });
-      if (!changed.count) conflict('采购单状态或版本已变化');
-      await audit(tx, ctx, 'erp.purchase.confirm', 'PurchaseOrder', id);
-      return tx.erpPurchaseOrder.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      const changed = await tx.erpPurchaseOrder.updateMany({ where: { id, tenantId: ctx.tenantId, createdByMembershipId: ctx.membershipId, status: 'draft', version }, data: { status: 'pending_approval', version: { increment: 1 } } });
+      if (!changed.count) conflict('仅发起人可提交当前草稿审核，或单据已变化');
+      await audit(tx, ctx, 'erp.purchase.submit', 'PurchaseOrder', id);
+      const order = await tx.erpPurchaseOrder.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      const approvers = await tx.membership.findMany({ where: { tenantId: ctx.tenantId, role: 'admin', active: true, id: { not: ctx.membershipId } }, select: { id: true } });
+      await this.channels.queuePurchase(tx, ctx, id, order.number, order.version, 'submitted', approvers.map(x => x.id));
+      return order;
+    });
+  }
+
+  async reject(ctx: RequestContext, id: string, body: unknown) {
+    this.auth.require(ctx, 'erp.purchase.approve');
+    const { version, reason } = readBody(z.object({ version: z.int().positive(), reason: label(500) }), body);
+    return this.db.$transaction(async tx => {
+      const current = await tx.erpPurchaseOrder.findFirst({ where: { id, tenantId: ctx.tenantId, status: 'pending_approval', version }, select: { createdByMembershipId: true } });
+      if (!current) conflict('采购审核状态或版本已变化');
+      if (current.createdByMembershipId === ctx.membershipId) conflict('采购单不能由发起人自行审核');
+      const changed = await tx.erpPurchaseOrder.updateMany({ where: { id, tenantId: ctx.tenantId, status: 'pending_approval', version }, data: { status: 'draft', version: { increment: 1 } } });
+      if (!changed.count) conflict('采购审核状态或版本已变化');
+      await audit(tx, ctx, 'erp.purchase.reject', 'PurchaseOrder', id, { reason });
+      const order = await tx.erpPurchaseOrder.findUniqueOrThrow({ where: { id }, include: { lines: true } });
+      await this.channels.queuePurchase(tx, ctx, id, order.number, order.version, 'rejected', [current.createdByMembershipId]);
+      return order;
     });
   }
 

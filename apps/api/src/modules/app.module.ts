@@ -4,6 +4,8 @@ import { PrismaService } from './prisma.service';
 import { AuthService } from './platform/auth.service';
 import { PlatformService } from './platform/platform.service';
 import { PlatformController } from './platform/platform.controller';
+import { ChannelController } from './platform/channel.controller';
+import { ChannelService } from './platform/channel.service';
 import { ErpController } from './erp/erp.controller';
 import { MasterService } from './erp/master.service';
 import { PurchaseService } from './erp/purchase.service';
@@ -16,5 +18,5 @@ import { AiController } from './ai/ai.controller';
 import { APP_AI_PROVIDER } from './ai/app-ai-provider';
 import { ErpAiProvider } from './erp/erp-ai.provider';
 
-@Module({ controllers: [HealthController, PlatformController, ErpController, AiController], providers: [PrismaService, AuthService, PlatformService, MasterService, PurchaseService, SalesService, InventoryService, FinanceService, ModelGateway, ErpAiProvider, { provide: APP_AI_PROVIDER, useExisting: ErpAiProvider }, AiService], exports: [PrismaService, AuthService] })
+@Module({ controllers: [HealthController, PlatformController, ChannelController, ErpController, AiController], providers: [PrismaService, AuthService, PlatformService, ChannelService, MasterService, PurchaseService, SalesService, InventoryService, FinanceService, ModelGateway, ErpAiProvider, { provide: APP_AI_PROVIDER, useExisting: ErpAiProvider }, AiService], exports: [PrismaService, AuthService] })
 export class AppModule {}

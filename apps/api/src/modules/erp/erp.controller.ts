@@ -13,13 +13,17 @@ export class ErpController {
   private ctx(req: Request, key: string) { return this.auth.context(req, key, 'erp'); }
 
   @Get('customers') customers(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.master.customers(ctx, q)); }
+  @Get('customers/pool') customerPool(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.master.customerPool(ctx, q)); }
   @Post('customers') createCustomer(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.master.createCustomer(ctx, b)); }
+  @Post('customers/:id/claim') claimCustomer(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string) { return this.ctx(r, key).then(ctx => this.master.claimCustomer(ctx, id)); }
   @Get('customers/:id') customer(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string) { return this.ctx(r, key).then(ctx => this.master.customer(ctx, id)); }
   @Patch('customers/:id') updateCustomer(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.master.updateCustomer(ctx, id, b)); }
 
   @Get('opportunities') opportunities(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.master.opportunities(ctx, q)); }
   @Post('opportunities') createOpportunity(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.master.createOpportunity(ctx, b)); }
   @Post('opportunities/:id/stage') stage(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.master.changeOpportunity(ctx, id, b)); }
+  @Get('opportunities/:id/followups') followups(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.master.opportunityFollowups(ctx, id, q)); }
+  @Post('opportunities/:id/followups') createFollowup(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.master.createOpportunityFollowup(ctx, id, b)); }
 
   @Get('products') products(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.master.products(ctx, q)); }
   @Post('products') createProduct(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.master.createProduct(ctx, b)); }
@@ -32,16 +36,21 @@ export class ErpController {
   @Get('purchases') purchasesList(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.purchases.list(ctx, q)); }
   @Post('purchases') createPurchase(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.purchases.create(ctx, b)); }
   @Get('purchases/:id') purchase(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string) { return this.ctx(r, key).then(ctx => this.purchases.get(ctx, id)); }
+  @Post('purchases/:id/submit') submitPurchase(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.purchases.submit(ctx, id, b)); }
   @Post('purchases/:id/confirm') confirmPurchase(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.purchases.confirm(ctx, id, b)); }
+  @Post('purchases/:id/reject') rejectPurchase(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.purchases.reject(ctx, id, b)); }
   @Post('purchases/:id/receive') receivePurchase(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.purchases.receive(ctx, id, b)); }
 
   @Get('contracts') contracts(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.sales.list(ctx, q)); }
   @Post('contracts') createContract(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.sales.create(ctx, b)); }
   @Get('contracts/:id') contract(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string) { return this.ctx(r, key).then(ctx => this.sales.get(ctx, id)); }
+  @Post('contracts/:id/submit') submitContract(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.sales.submit(ctx, id, b)); }
   @Post('contracts/:id/confirm') confirmContract(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.sales.confirm(ctx, id, b)); }
+  @Post('contracts/:id/reject') rejectContract(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.sales.reject(ctx, id, b)); }
   @Post('contracts/:id/ship') shipContract(@Req() r: Request, @Param('tenantKey') key: string, @Param('id') id: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.sales.ship(ctx, id, b)); }
 
   @Get('inventory') inventory(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.stock.balances(ctx, q)); }
+  @Get('inventory/alerts') inventoryAlerts(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.stock.alerts(ctx, q)); }
   @Get('inventory/movements') movements(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.stock.movements(ctx, q)); }
   @Get('inventory/documents') documents(@Req() r: Request, @Param('tenantKey') key: string, @Query() q: unknown) { return this.ctx(r, key).then(ctx => this.stock.documents(ctx, q)); }
   @Post('inventory/stocktakes') stocktake(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.ctx(r, key).then(ctx => this.stock.stocktake(ctx, b)); }

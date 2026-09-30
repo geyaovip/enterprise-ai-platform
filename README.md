@@ -1,6 +1,6 @@
-# 企业 AI 应用平台
+# 知行方舟 · 企业智能业务平台
 
-项目工作名：**企业 AI 应用平台**（`enterprise-ai-platform`）。
+对外官网名称为**知行方舟 · 企业智能业务平台**，代码目录沿用 `enterprise-ai-platform`；历史规划文档中的“企业 AI 应用平台”指向同一项目。
 
 已确认的建设顺序：
 
@@ -23,6 +23,12 @@
 
 ## 当前开发运行
 
-本地开发需要 Node 24、pnpm 11.19 和 PostgreSQL 17。在本目录复制 `.env.example` 为 `.env`，同时复制一份到 `apps/api/.env`；设置相同的本地 PostgreSQL 密码、API 的 `DATABASE_URL` 和 32 字节 AI 加密密钥。执行 `docker compose --env-file .env -f infrastructure/compose.yaml up -d postgres`、`pnpm install --frozen-lockfile`、`pnpm db:deploy`，再分别启动 `pnpm dev:api` 和 `pnpm dev:web`。异步 AI 任务使用 `pnpm --filter @suite/api start:worker` 启动独立 Worker。初始化测试企业和管理员前，在隔离开发环境设置 `BOOTSTRAP_EMAIL`、`BOOTSTRAP_PASSWORD`、`BOOTSTRAP_TENANT_SLUG`、`BOOTSTRAP_TENANT_NAME`，然后执行 `pnpm --filter @suite/api bootstrap`；此命令无交互提示，仅允许新租户首次初始化。
+本地开发需要 Node 24、pnpm 11.19 和 PostgreSQL 17。在本目录复制 `.env.example` 为 `.env`，同时复制一份到 `apps/api/.env`；设置相同的本地 PostgreSQL 密码、API 的 `DATABASE_URL`、32 字节 AI 加密密钥和独立的 32 字节 `CHANNEL_ENCRYPTION_KEY`。执行 `docker compose --env-file .env -f infrastructure/compose.yaml up -d postgres`、`pnpm install --frozen-lockfile`、`pnpm db:deploy`，再分别启动 `pnpm dev:api` 和 `pnpm dev:web`。异步 AI 任务及飞书长连接使用 `pnpm --filter @suite/api start:worker` 启动独立 Worker。初始化测试企业和管理员前，在隔离开发环境设置 `BOOTSTRAP_EMAIL`、`BOOTSTRAP_PASSWORD`、`BOOTSTRAP_TENANT_SLUG`、`BOOTSTRAP_TENANT_NAME`，然后执行 `pnpm --filter @suite/api bootstrap`；此命令无交互提示，仅允许新租户首次初始化。
 
 容器部署样例见 [生产 Compose](infrastructure/compose.production.yaml) 和 [环境变量模板](.env.production.example)，备份命令见 [备份脚本](infrastructure/backup.sh)。实施状态、已验证证据和剩余准入项见 [开发与内部验收记录](docs/18-开发与内部验收记录.md)。
+
+## 官网与搜索收录
+
+统一 Web 的 `/` 为“知行方舟”公开官网，`/login` 及业务路由继续进入原工作区。官网主体、标题、描述和结构化数据直接写在 `apps/web/index.html` 中，首屏和正文不依赖客户端渲染；非官网路由在浏览器中设置 `noindex,nofollow`，并由 `apps/web/public/robots.txt` 排除主要工作区路径。页面中的业务对话是场景示意，ERP、CRM、MES 和交付方式均按当前阶段标注，不能作为功能已交付的证明。
+
+正式发布前须确定公网域名与品牌资源，再增加规范网址、站点地图、分享图片和正式联系入口；目前没有这些外部信息，不写入临时地址。还需在正式域名下检查搜索引擎可访问性及 `/login` 等私有路由的索引策略。

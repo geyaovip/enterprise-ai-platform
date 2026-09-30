@@ -18,6 +18,7 @@ model Tenant {
   orgUnits  OrgUnit[]
   apps      TenantApp[]
   audits    AuditEvent[]
+  channels  ChannelConnection[]
 }
 
 model User {
@@ -110,6 +111,113 @@ model AuditEvent {
   @@index([requestId])
 }
 
+model ChannelConnection {
+  id               String   @id @default(uuid())
+  tenantId         String
+  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  provider         String
+  appId            String
+  secretCiphertext String
+  status           String   @default("configured")
+  lastError        String?
+  connectedAt      DateTime?
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  identities       ChannelIdentity[]
+  deliveries       ChannelDelivery[]
+  @@unique([tenantId, provider])
+  @@unique([provider, appId])
+}
+
+model ChannelConnectAttempt {
+  id           String   @id @default(uuid())
+  tenantId     String
+  membershipId String
+  provider     String
+  status       String   @default("starting")
+  qrUrl        String?
+  expiresAt    DateTime?
+  errorCode    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@index([tenantId, membershipId, createdAt])
+}
+
+model ChannelIdentity {
+  id             String   @id @default(uuid())
+  tenantId       String
+  connectionId   String
+  connection     ChannelConnection @relation(fields: [connectionId], references: [id])
+  membershipId   String
+  externalUserId String
+  createdAt      DateTime @default(now())
+  @@unique([connectionId, membershipId])
+  @@unique([connectionId, externalUserId])
+  @@index([tenantId, membershipId])
+}
+
+model ChannelPairCode {
+  id           String   @id @default(uuid())
+  tenantId     String
+  connectionId String
+  membershipId String
+  codeHash     String   @unique
+  expiresAt    DateTime
+  usedAt       DateTime?
+  createdAt    DateTime @default(now())
+  @@index([tenantId, membershipId, createdAt])
+}
+
+model ChannelChatSession {
+  id             String   @id @default(uuid())
+  tenantId       String
+  connectionId   String
+  membershipId   String
+  externalChatId String
+  conversationId String
+  createdAt      DateTime @default(now())
+  @@unique([connectionId, externalChatId, membershipId])
+}
+
+model ChannelInbound {
+  id           String   @id @default(uuid())
+  connectionId String
+  messageId    String
+  senderId     String
+  chatId       String
+  chatType     String
+  content      String
+  status       String   @default("queued")
+  attempts     Int      @default(0)
+  nextAttemptAt DateTime @default(now())
+  replyText    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+  @@unique([connectionId, messageId])
+  @@index([status, nextAttemptAt])
+}
+
+model ChannelDelivery {
+  id                   String   @id @default(uuid())
+  tenantId             String
+  connectionId         String
+  connection           ChannelConnection @relation(fields: [connectionId], references: [id])
+  membershipId         String
+  eventKey             String
+  title                String
+  body                 String
+  status               String   @default("queued")
+  attempts             Int      @default(0)
+  nextAttemptAt        DateTime @default(now())
+  providerMessageId    String?
+  errorCode            String?
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+  sentAt               DateTime?
+  @@unique([connectionId, membershipId, eventKey])
+  @@index([status, nextAttemptAt])
+}
+
 model ErpCustomer {
   id                String   @id @default(uuid())
   tenantId          String
@@ -118,7 +226,7 @@ model ErpCustomer {
   contactName       String?
   phone             String?
   industry          String?
-  ownerMembershipId String
+  ownerMembershipId String?
   active            Boolean  @default(true)
   createdAt         DateTime @default(now())
   opportunities     ErpOpportunity[]
@@ -139,7 +247,21 @@ model ErpOpportunity {
   createdAt         DateTime @default(now())
   updatedAt         DateTime @updatedAt
   contracts         ErpSalesContract[]
+  followups         ErpOpportunityFollowup[]
   @@index([tenantId, ownerMembershipId, stage])
+}
+
+model ErpOpportunityFollowup {
+  id                String   @id @default(uuid())
+  tenantId          String
+  opportunityId     String
+  opportunity       ErpOpportunity @relation(fields: [opportunityId], references: [id])
+  actorMembershipId String
+  note              String
+  nextActionAt      DateTime?
+  createdAt         DateTime @default(now())
+  @@index([tenantId, opportunityId, createdAt])
+  @@index([tenantId, nextActionAt])
 }
 
 model ErpProduct {

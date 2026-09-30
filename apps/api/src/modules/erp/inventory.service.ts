@@ -12,6 +12,48 @@ const stocktakeInput = z.object({ documentNumber: label(80), note: z.string().ma
 export class InventoryService {
   constructor(private readonly db: PrismaService, private readonly auth: AuthService) {}
 
+  async alerts(ctx: RequestContext, query: unknown) {
+    this.auth.require(ctx, 'erp.inventory.read');
+    const q = readBody(pageQuery.extend({ status: z.enum(['active', 'all']).default('active') }), query);
+    const balances = await this.db.erpInventoryBalance.findMany({
+      where: { tenantId: ctx.tenantId, product: { active: true, reorderPoint: { gt: 0 } } },
+      include: { product: { select: { id: true, sku: true, name: true, reorderPoint: true } } },
+      orderBy: { product: { sku: 'asc' } },
+    });
+    const visible = q.status === 'active' ? balances.filter(x => x.quantity <= x.product.reorderPoint) : balances;
+    const page = visible.slice((q.page - 1) * q.page_size, q.page * q.page_size);
+    const productIds = page.map(x => x.productId);
+    const [openLines, receipts] = await Promise.all([
+      this.db.erpPurchaseLine.findMany({
+        where: { productId: { in: productIds }, order: { tenantId: ctx.tenantId, status: { in: ['ordered', 'partial_received'] } } },
+        select: { productId: true, quantity: true, receivedQty: true, order: { select: { id: true, number: true } } },
+      }),
+      this.db.erpStockMovement.findMany({
+        where: { tenantId: ctx.tenantId, productId: { in: productIds }, sourceType: 'purchase' },
+        select: { productId: true, quantity: true, createdAt: true, document: { select: { number: true } }, sourceId: true },
+        orderBy: { createdAt: 'desc' },
+        distinct: ['productId'],
+      }),
+    ]);
+    const orderIds = [...new Set(receipts.map(x => x.sourceId))];
+    const receiptOrders = await this.db.erpPurchaseOrder.findMany({ where: { tenantId: ctx.tenantId, id: { in: orderIds } }, select: { id: true, number: true } });
+    const items = page.map(balance => {
+      const pending = openLines.filter(x => x.productId === balance.productId).map(x => ({ id: x.order.id, number: x.order.number, remainingQty: x.quantity - x.receivedQty }));
+      const incomingQty = pending.reduce((sum, x) => sum + x.remainingQty, 0);
+      const shortfallQty = Math.max(0, balance.product.reorderPoint + 1 - balance.quantity);
+      const latest = receipts.find(x => x.productId === balance.productId);
+      const receiptOrder = latest && receiptOrders.find(x => x.id === latest.sourceId);
+      return {
+        productId: balance.productId, sku: balance.product.sku, name: balance.product.name,
+        quantity: balance.quantity, reorderPoint: balance.product.reorderPoint, balanceVersion: balance.version,
+        status: shortfallQty === 0 ? 'normal' : incomingQty >= shortfallQty ? 'awaiting_receipt' : 'needs_purchase',
+        shortfallQty, incomingQty, suggestedOrderQty: Math.max(0, shortfallQty - incomingQty), pendingOrders: pending,
+        latestReceipt: latest && receiptOrder ? { documentNumber: latest.document.number, purchaseId: receiptOrder.id, purchaseNumber: receiptOrder.number, quantity: latest.quantity, createdAt: latest.createdAt } : null,
+      };
+    });
+    return { items, total: visible.length, page: q.page, page_size: q.page_size };
+  }
+
   async balances(ctx: RequestContext, query: unknown) {
     this.auth.require(ctx, 'erp.inventory.read');
     const q = readBody(pageQuery, query);
@@ -20,7 +62,7 @@ export class InventoryService {
       this.db.erpInventoryBalance.findMany({ where, include: { product: { select: { id: true, sku: true, name: true, reorderPoint: true, active: true } } }, orderBy: { product: { sku: 'asc' } }, skip: (q.page - 1) * q.page_size, take: q.page_size }),
       this.db.erpInventoryBalance.count({ where }),
     ]);
-    return { items: items.map(x => ({ ...x, lowStock: x.quantity <= x.product.reorderPoint })), total, page: q.page, page_size: q.page_size };
+    return { items: items.map(x => ({ ...x, lowStock: x.product.active && x.product.reorderPoint > 0 && x.quantity <= x.product.reorderPoint })), total, page: q.page, page_size: q.page_size };
   }
 
   async movements(ctx: RequestContext, query: unknown) {

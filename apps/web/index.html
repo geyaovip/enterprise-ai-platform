@@ -1,2 +1,65 @@
 <!doctype html>
-<html lang="zh-CN"><head><meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1" /><link rel="icon" type="image/svg+xml" href="/favicon.svg" /><title>企业 AI 应用平台</title></head><body><div id="root"></div><script type="module" src="/src/main.tsx"></script></body></html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#101f39" />
+  <meta name="robots" id="robots-meta" content="index,follow" />
+  <meta name="description" content="知行方舟让 AI 真正参与企业工作。从采购、库存、销售与财务等真实业务出发，帮助团队理解情况、发现风险，并在授权范围内完成操作。了解企业智能业务平台的产品方向与交付方式。" />
+  <meta property="og:type" content="website" />
+  <meta property="og:locale" content="zh_CN" />
+  <meta property="og:site_name" content="知行方舟" />
+  <meta property="og:title" content="知行方舟｜让 AI 真正参与企业工作" />
+  <meta property="og:description" content="让智能深入业务，让业务自主运行。让 AI 理解业务、发现问题，并在授权范围内帮助处理。" />
+  <meta name="twitter:card" content="summary" />
+  <link rel="stylesheet" href="/site.css" />
+  <title>知行方舟｜让 AI 真正参与企业工作｜企业智能业务平台</title>
+  <script>
+    (function () {
+      var isHome = location.pathname === '/' || location.pathname === '/index.html';
+      document.documentElement.dataset.page = isHome ? 'marketing' : 'app';
+      if (!isHome) {
+        document.getElementById('robots-meta').content = 'noindex,nofollow';
+        document.title = '工作区｜知行方舟';
+      }
+    })();
+  </script>
+  <script type="application/ld+json">{"@context":"https://schema.org","@type":"SoftwareApplication","name":"知行方舟 · 企业智能业务平台","applicationCategory":"BusinessApplication","operatingSystem":"Web","description":"让 AI 真正参与企业工作，在授权范围内理解业务、发现风险并帮助完成操作。"}</script>
+</head>
+<body>
+<div id="marketing" class="marketing">
+  <a class="skip-link" href="#main-content">跳转到主要内容</a>
+  <header class="site-header" id="top"><div class="site-shell header-inner">
+    <a class="site-brand" href="/" aria-label="知行方舟首页"><strong>知行方舟</strong><span>企业智能业务平台</span></a>
+    <button class="menu-toggle" type="button" aria-label="打开导航" aria-controls="site-nav" aria-expanded="false"><span></span><span></span><span></span></button>
+    <nav class="site-nav" id="site-nav" aria-label="官网导航"><a href="#challenge">企业难题</a><a href="#how">如何工作</a><a href="#products">产品方向</a><a href="#delivery">交付方式</a><a class="nav-login" href="/login">进入工作区</a></nav>
+  </div></header>
+  <main id="main-content">
+    <section class="hero" aria-labelledby="hero-title"><div class="site-shell hero-grid">
+      <div class="hero-copy"><p class="eyebrow light">让智能深入业务，让业务自主运行</p><h1 id="hero-title">让 AI 真正参与<br /><em>企业工作。</em></h1><p class="hero-lede">不止于聊天、写文案和查资料。让 AI 理解企业正在发生什么，帮助员工发现问题、处理工作，并把结果带回真实业务。</p><div class="hero-actions"><a class="site-button button-bright" href="#how">看看 AI 如何工作 <span aria-hidden="true">↗</span></a><a class="site-button button-ghost" href="#products">了解产品方向</a></div><p class="hero-footnote">从采购、库存、销售与财务等具体场景开始。</p></div>
+      <div class="hero-stage" aria-label="采购业务场景示意"><div class="stage-topline"><span>一个更接近真实工作的 AI</span><span>场景示意</span></div><div class="stage-card"><div class="stage-card-head"><span class="stage-avatar">知行</span><div><strong>业务助手</strong><small>采购 · 库存 · 履约</small></div><span class="stage-status">业务上下文已就绪</span></div><div class="stage-question">“这张采购单还有哪些货没到？”</div><div class="stage-answer"><p class="stage-answer-label">基于当前单据与入库记录</p><strong>还有 2 项商品待入库。</strong><p>我已按剩余数量整理明细。你可以查看采购单，或在核对实际到货后继续办理入库。</p></div><div class="stage-list"><div><span>商品 A</span><strong>待入库 120 件</strong></div><div><span>商品 B</span><strong>待入库 36 件</strong></div></div><div class="stage-action">涉及库存变更的操作，需要有权人员确认</div></div><p class="stage-caption">AI 给出判断，也尊重企业的权限与业务规则。</p></div>
+    </div><div class="site-shell hero-baseline"><span>理解业务数据</span><span>识别异常与风险</span><span>协助完成操作</span><span>留下可追溯结果</span></div></section>
+
+    <section class="section challenge-section" id="challenge" aria-labelledby="challenge-title"><div class="site-shell"><div class="section-heading split-heading"><div><p class="eyebrow">01 / 今天的企业</p><h2 id="challenge-title">系统越来越多，<br />事情还是要靠人串起来。</h2></div><p>客户、合同、订单、项目与财务分散在不同地方。真正费力的，常常不是记录一条数据，而是弄清楚发生了什么、下一步该谁做。</p></div><div class="challenge-grid"><article class="challenge-card"><span class="card-index">01</span><h3>软件多，工作却不连贯</h3><p>员工在不同系统之间切换，找客户、对订单、查库存，靠经验把信息拼起来。</p></article><article class="challenge-card"><span class="card-index">02</span><h3>有数据，很难及时有答案</h3><p>经营问题往往要导出表格、反复核对，再等一轮汇报才能看清。</p></article><article class="challenge-card"><span class="card-index">03</span><h3>大量时间花在重复协调</h3><p>查询、整理、录入、催办、统计，让人难以专注于判断和决策。</p></article><article class="challenge-card"><span class="card-index">04</span><h3>AI 用上了，却没进入业务</h3><p>AI 会回答通用问题，却不知道企业的单据状态，更不能凭一句话完成有权操作。</p></article></div><p class="challenge-statement">AI 已经很聪明。<span>它还需要真正理解你的公司。</span></p></div></section>
+
+    <section class="section how-section" id="how" aria-labelledby="how-title"><div class="site-shell"><div class="section-heading center-heading"><p class="eyebrow">02 / AI 进入工作现场</p><h2 id="how-title">不只告诉你答案，<br />还帮助你把事情往前推进。</h2><p>从业务事实出发，经过分析、授权与确认，再进入真实流程。人负责判断，AI 帮人减少信息处理和重复操作。</p></div><div class="workflow-grid"><div class="workflow-copy"><div class="workflow-step"><span>01</span><div><h3>看懂当前情况</h3><p>结合有权访问的单据、库存和业务记录，理解问题发生在哪里。</p></div></div><div class="workflow-step"><span>02</span><div><h3>给出可核对的判断</h3><p>把关键事实、异常和建议放在一起，让员工更快做决定。</p></div></div><div class="workflow-step"><span>03</span><div><h3>执行被授权的动作</h3><p>创建草稿、更新业务状态等操作经业务规则校验；重要动作先由人确认。</p></div></div><div class="workflow-step"><span>04</span><div><h3>留下真实的业务回执</h3><p>以系统实际保存的结果为准，记录是谁、在什么场景下完成了什么。</p></div></div></div><div class="story-demo"><div class="story-demo-head"><div><span class="mini-eyebrow">业务场景示意</span><h3>一句话，可以从哪里开始？</h3></div><span class="demo-signal">人机协作</span></div><div class="story-tabs" role="tablist" aria-label="查看业务场景"><button type="button" role="tab" aria-selected="true" aria-controls="story-purchase" id="tab-purchase" data-story="purchase">采购跟进</button><button type="button" role="tab" aria-selected="false" aria-controls="story-draft" id="tab-draft" data-story="draft" tabindex="-1">创建草稿</button><button type="button" role="tab" aria-selected="false" aria-controls="story-contract" id="tab-contract" data-story="contract" tabindex="-1">合同风险</button></div><div class="story-panel" id="story-purchase" role="tabpanel" aria-labelledby="tab-purchase" data-panel="purchase"><p class="story-prompt">“这张采购单还有哪些货没有到？”</p><div class="story-result"><span>AI 帮你</span><h4>核对订购、已入库与剩余数量</h4><p>将待入库的商品和数量集中呈现，继续办理入库前由仓库人员核对实际到货情况。</p></div><div class="story-outcome"><strong>下一步</strong><span>打开采购单 · 核对到货 · 有权确认</span></div></div><div class="story-panel" id="story-draft" role="tabpanel" aria-labelledby="tab-draft" data-panel="draft" hidden><p class="story-prompt">“按这段需求，帮我建一张采购单草稿。”</p><div class="story-result"><span>AI 帮你</span><h4>提取供应商与商品信息，生成草稿</h4><p>可识别的信息先带入单据；缺少的字段和不确定内容交给员工补充、核对。</p></div><div class="story-outcome"><strong>下一步</strong><span>核对草稿 · 补齐信息 · 再确认采购</span></div></div><div class="story-panel" id="story-contract" role="tabpanel" aria-labelledby="tab-contract" data-panel="contract" hidden><p class="story-prompt">“这份销售合同的履约风险在哪里？”</p><div class="story-result"><span>AI 帮你</span><h4>把合同进度与当前库存放在一起看</h4><p>区分系统事实与建议，指出需要人工核实的缺口；业务数据变化后重新分析。</p></div><div class="story-outcome"><strong>下一步</strong><span>核实风险 · 调整计划 · 跟进责任人</span></div></div><p class="story-disclaimer">示例用于解释产品交互，具体结果取决于已开通功能、企业数据与权限。</p></div></div></div></section>
+
+    <section class="section product-section" id="products" aria-labelledby="products-title"><div class="site-shell"><div class="section-heading split-heading"><div><p class="eyebrow">03 / 产品从业务长出来</p><h2 id="products-title">一套工作入口，<br />面向不同的业务现场。</h2></div><p>平台能力统一建设，业务规则由各应用负责。我们从可验证的工作闭环起步，再逐步扩展到更多业务与行业。</p></div><div class="product-grid"><article class="product-card featured"><div class="product-top"><span class="product-status current">首批建设</span><span class="product-code">01 / ERP</span></div><h3>采购、销售与经营协作</h3><p>围绕客户与商机、采购与库存、销售合同、应收应付等工作，帮助团队看到事实，也完成有权的业务操作。</p><ul><li>采购确认与分批入库</li><li>销售合同与库存联动</li><li>账款跟进与业务分析</li></ul></article><article class="product-card"><div class="product-top"><span class="product-status planned">后续规划</span><span class="product-code">02 / CRM · MES</span></div><h3>客户关系与生产执行</h3><p>把客户跟进、商机推进、生产计划与工单执行纳入同一产品体系，按各自领域规则建设。</p><ul><li>客户与销售过程</li><li>物料、计划与生产</li><li>跨应用协作按实际需求设计</li></ul></article><article class="product-card"><div class="product-top"><span class="product-status planned">未来方向</span><span class="product-code">03 / 建筑行业</span></div><h3>走进项目与行业场景</h3><p>在通用应用稳定后，面向项目经营、商务经营、咨询与设计等场景，定义真正有用的行业闭环。</p><ul><li>先验证客户的具体问题</li><li>按场景建设内置能力</li><li>再评估已有系统的连接</li></ul></article></div></div></section>
+
+    <section class="section adoption-section" id="adoption" aria-labelledby="adoption-title"><div class="site-shell adoption-grid"><div><p class="eyebrow light">04 / 从现实出发</p><h2 id="adoption-title">不必一次推倒重来。<br />从一件值得解决的事开始。</h2><p>企业已有系统时，先看能否安全地使用现有数据和能力；缺少必要能力时，再提供够用的内置功能。每一步都围绕真实业务场景，而不是先铺一张庞大的系统清单。</p><a class="text-link light-link" href="#delivery">了解如何交付 <span aria-hidden="true">↗</span></a></div><div class="adoption-list"><div><span>01</span><strong>选一个业务问题</strong><p>例如采购到货跟进、合同履约判断或跨部门信息整理。</p></div><div><span>02</span><strong>明确数据与权限</strong><p>确定事实来自哪里、谁能看、哪些动作需要人确认。</p></div><div><span>03</span><strong>做成可验收的闭环</strong><p>让 AI 的建议和操作回到实际单据、任务与业务结果中。</p></div></div></div></section>
+
+    <section class="section value-section" aria-labelledby="value-title"><div class="site-shell"><div class="section-heading center-heading"><p class="eyebrow">05 / 真正重要的变化</p><h2 id="value-title">让企业的每一步工作，<br />更清楚，也更有行动力。</h2></div><div class="value-grid"><article><span>看得更早</span><h3>问题不必等到月底才被发现</h3><p>把异常与待办放回发生它们的业务现场，让团队更及时地处理。</p></article><article><span>做得更轻</span><h3>员工少在重复工作里打转</h3><p>减少查找、整理与反复录入，把时间留给判断、沟通和创造。</p></article><article><span>留得更清</span><h3>每一次操作都有依据和回执</h3><p>人和 AI 在同一权限与业务规则下协作，结果可核对、可追溯。</p></article></div></div></section>
+
+    <section class="section delivery-section" id="delivery" aria-labelledby="delivery-title"><div class="site-shell"><div class="section-heading split-heading"><div><p class="eyebrow">06 / 交付方式</p><h2 id="delivery-title">同一套产品，<br />适应不同企业环境。</h2></div><p>交付方式决定产品运行在哪里、由谁维护；企业可以按需要选择应用组合。当前首批目标是标准云服务，其他方式将在真实客户需求下验证。</p></div><div class="delivery-grid"><article><span class="delivery-number">01</span><h3>标准云服务</h3><p>由我们提供共享云环境与日常维护，以租户和权限隔离企业数据。</p><small>首批交付目标</small></article><article><span class="delivery-number">02</span><h3>企业专属云服务</h3><p>为客户配置独立的运行资源，由我们负责维护和产品更新。</p><small>按客户需求规划</small></article><article><span class="delivery-number">03</span><h3>企业内部部署</h3><p>部署在客户提供的环境中，双方约定升级、备份、监控与支持分工。</p><small>按客户需求规划</small></article></div></div></section>
+
+    <section class="section faq-section" aria-labelledby="faq-title"><div class="site-shell faq-grid"><div><p class="eyebrow">常见问题</p><h2 id="faq-title">把重要的事<br />先说清楚。</h2></div><div class="faq-list"><details><summary>使用知行方舟，需要把现有系统全部替换吗？</summary><p>不需要。我们会从具体业务场景判断哪些能力需要内置、哪些可以使用企业现有系统。外部连接须经过接口、授权和数据边界评估；尚未接通的系统不会被展示成已连接。</p></details><details><summary>AI 会直接修改业务数据吗？</summary><p>AI 发起的操作必须经过当前用户权限、应用规则和实际业务服务。采购确认、出入库和收付款等重要动作需要有权人员核对并确认；成功与否以业务系统保存的回执为准。</p></details><details><summary>哪些产品现在可以申请试用？</summary><p>平台与新 ERP 正在开发和内部验证。首批客户试用范围、真实模型与正式云环境仍须完成验收；CRM、MES 和建筑行业应用属于后续阶段。</p></details></div></div></section>
+
+    <section class="closing-section" aria-labelledby="closing-title"><div class="site-shell closing-inner"><p class="eyebrow light">让下一步，从真实业务开始</p><h2 id="closing-title">让企业拥有<br />真正能工作的 AI。</h2><p>先解决一条真实业务链路，再让智能逐步深入更多工作。</p><div class="closing-actions"><a class="site-button button-bright" href="#how">重新看看业务场景 <span aria-hidden="true">↗</span></a><a class="site-button button-ghost" href="/login">已有账号，进入工作区</a></div></div></section>
+  </main>
+  <footer class="site-footer"><div class="site-shell footer-main"><div><strong class="footer-brand">知行方舟</strong><p>让智能深入业务，让业务自主运行。</p></div><nav aria-label="页脚导航"><a href="#challenge">企业难题</a><a href="#how">如何工作</a><a href="#products">产品方向</a><a href="#delivery">交付方式</a><a href="/login">工作区登录</a></nav></div><div class="site-shell footer-bottom"><span>© <span data-year>2026</span> 知行方舟</span><span>页面中的业务对话为场景示意，能力与交付以实际开通和验收结果为准。</span></div></footer>
+</div>
+<div id="root"></div>
+<script src="/site.js" defer></script>
+<script type="module" src="/src/main.tsx"></script>
+</body>
+</html>

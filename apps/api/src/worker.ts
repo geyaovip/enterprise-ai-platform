@@ -7,6 +7,7 @@ import { AppModule } from './modules/app.module';
 import { PrismaService } from './modules/prisma.service';
 import { AuthService } from './modules/platform/auth.service';
 import { AiService } from './modules/ai/ai.service';
+import { ChannelRuntime } from './modules/platform/channel.runtime';
 
 export async function processNextTask(db: PrismaService, auth: AuthService, ai: AiService): Promise<boolean> {
   const stale = new Date(Date.now() - 120_000);
@@ -34,8 +35,11 @@ async function main() {
   const db = app.get(PrismaService);
   const auth = app.get(AuthService);
   const ai = app.get(AiService);
+  const channels = new ChannelRuntime(db, auth, ai);
   let stopping = false;
   let lastTick = Date.now();
+  let nextChannelSync = 0;
+  let channelSync: Promise<void> | null = null;
   const health = createServer(async (req, res) => {
     if (req.url !== '/health') { res.writeHead(404).end(); return; }
     try {
@@ -50,12 +54,18 @@ async function main() {
   process.on('SIGINT', shutdown);
   process.on('SIGTERM', shutdown);
   while (!stopping) {
-    try { await processNextTask(db, auth, ai); }
+    if (!channelSync && Date.now() >= nextChannelSync) {
+      nextChannelSync = Date.now() + 10_000;
+      channelSync = channels.sync().catch(error => { process.stderr.write(`[worker] channel sync failed: ${error instanceof Error ? error.name : 'UnknownError'}\n`); }).finally(() => { channelSync = null; });
+    }
+    try { await channels.processInbound(); await channels.processDelivery(); await processNextTask(db, auth, ai); }
     catch (error) { process.stderr.write(`[worker] poll failed: ${error instanceof Error ? error.name : 'UnknownError'}\n`); }
     lastTick = Date.now();
     await new Promise(resolve => setTimeout(resolve, 1000));
   }
   await new Promise<void>(resolve => health.close(() => resolve()));
+  if (channelSync) await channelSync;
+  await channels.close();
   await app.close();
 }
 

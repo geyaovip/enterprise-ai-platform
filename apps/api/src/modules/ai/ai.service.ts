@@ -63,7 +63,7 @@ export class AiService {
     try { return modelPlan.parse(JSON.parse(cleaned)); } catch { return { answer: text, action: undefined }; }
   }
 
-  async send(ctx: RequestContext, id: string, body: unknown) {
+  async send(ctx: RequestContext, id: string, body: unknown, internalIdempotencyKey?: string) {
     this.require(ctx);
     const input = readBody(messageInput, body);
     const conversation = await this.get(ctx, id);
@@ -94,7 +94,7 @@ export class AiService {
         }
         const tool = plan.action.tool;
         if (!this.provider.canUse(ctx, tool)) throw new ConflictException('模型请求了未授权工具');
-        const action = await this.db.aiAction.create({ data: { tenantId: ctx.tenantId, userId: ctx.userId, membershipId: ctx.membershipId, appId: ctx.app.appId, conversationId: id, toolId: tool, input: plan.action.input as Prisma.InputJsonValue, status: this.provider.tools[tool].confirmationRequired ? 'pending' : 'running', confirmationRequired: this.provider.tools[tool].confirmationRequired, idempotencyKey: `${id}:${input.version}:${tool}` } });
+        const action = await this.db.aiAction.create({ data: { tenantId: ctx.tenantId, userId: ctx.userId, membershipId: ctx.membershipId, appId: ctx.app.appId, conversationId: id, toolId: tool, input: plan.action.input as Prisma.InputJsonValue, status: this.provider.tools[tool].confirmationRequired ? 'pending' : 'running', confirmationRequired: this.provider.tools[tool].confirmationRequired, idempotencyKey: internalIdempotencyKey ? `channel:${internalIdempotencyKey}:${tool}` : `${id}:${input.version}:${tool}` } });
         assistant.actionId = action.id;
         if (action.confirmationRequired) assistant.content += ' 请核对待执行对象和字段后确认。';
         else {

@@ -2,6 +2,7 @@
 
 > **Future Product Specification — NOT CURRENT IMPLEMENTATION PLAN**
 > 当前实施顺序：**Platform → 新 ERP → 新 CRM → 新 MES → Architecture Review → Construction Suite**。本文件是未来产品输入，不是当前开发任务；进入建筑阶段前须以真实客户需求重新确认范围、应用顺序及平台实际已交付能力。[当前启动基线](docs/15-开发启动基线.md)和[决策记录](docs/00-文档索引与决策记录.md)优先于下文的旧执行说明。下文提到的 File、Knowledge、Integration 或 `construction/shared` 均不表示已实现或首期必建。
+> 进入具体建筑应用设计时，按[后续新应用的 AI 业务闭环](docs/10-应用接入契约.md#后续新应用的-ai-业务闭环)核对业务结果、来源、证据、应用状态、人工确认和效果；本文件中的示例闭环与对象清单仍须以真实客户样本确认，不自动成为开发任务。
 
 > **用途**：本文件是 `Enterprise AI Application Platform V0.1`
 > 完成后的建筑行业应用实施规格。\

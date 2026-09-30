@@ -4,7 +4,9 @@ onlyBuiltDependencies:
   - '@prisma/engines'
   - esbuild
   - prisma
+  - protobufjs
 allowBuilds:
   '@prisma/engines': true
   esbuild: true
   prisma: true
+  protobufjs: true

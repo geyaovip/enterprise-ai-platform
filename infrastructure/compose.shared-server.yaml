@@ -1,0 +1,22 @@
+name: enterprise-ai-platform
+services:
+  postgres:
+    mem_limit: 192m
+
+  api:
+    mem_limit: 384m
+    networks:
+      - default
+      - shared_proxy
+
+  worker:
+    mem_limit: 256m
+
+  web:
+    profiles:
+      - standalone-web
+
+networks:
+  shared_proxy:
+    external: true
+    name: yingchuan_backend

@@ -11,7 +11,7 @@ export function Notice({ text, tone = 'error' }: { text?: string | null; tone?: 
 
 export function Empty({ text = '暂无记录' }: { text?: string }) { return <div className="empty">{text}</div>; }
 export function Loading() { return <div className="loading" role="status">正在加载…</div>; }
-const statusLabels: Record<string, string> = { active: '启用', inactive: '停用', draft: '草稿', ordered: '已确认', confirmed: '已确认', partial_received: '部分入库', received: '已入库', partial_shipped: '部分出库', shipped: '已出库', open: '未结清', partial: '部分结清', paid: '已结清', in: '入库', out: '出库', receipt: '入库', shipment: '出库', stocktake: '盘点', low_stock: '低库存', discovery: '发现', proposal: '方案', won: '赢单', lost: '输单', pending: '待确认', running: '处理中', completed: '已完成', failed: '失败' };
+const statusLabels: Record<string, string> = { needs_purchase: '待采购', awaiting_receipt: '待入库', normal: '库存正常', active: '启用', inactive: '停用', draft: '草稿', pending_approval: '待审核', ordered: '已确认', confirmed: '已确认', partial_received: '部分入库', received: '已入库', partial_shipped: '部分出库', shipped: '已出库', open: '未结清', partial: '部分结清', paid: '已结清', in: '入库', out: '出库', receipt: '入库', shipment: '出库', stocktake: '盘点', low_stock: '低库存', discovery: '发现', proposal: '方案', won: '赢单', lost: '输单', pending: '待确认', running: '处理中', completed: '已完成', failed: '失败', configured: '等待连通', connected: '长连接已建立', reconnecting: '重新连接中', error: '连接异常' };
 export function Status({ value }: { value: string }) { return <span className={`status status-${value}`}>{statusLabels[value] ?? value.replaceAll('_', ' ')}</span>; }
 export function Money({ value }: { value: string | number }) { return <span className="money">¥{Number(value).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>; }
 

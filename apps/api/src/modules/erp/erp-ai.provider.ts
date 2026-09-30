@@ -10,6 +10,7 @@ import { PurchaseService } from './purchase.service';
 import { SalesService } from './sales.service';
 import { FinanceService } from './finance.service';
 import { MasterService } from './master.service';
+import { InventoryService } from './inventory.service';
 
 @Injectable()
 export class ErpAiProvider implements AppAiProvider {
@@ -34,6 +35,7 @@ export class ErpAiProvider implements AppAiProvider {
     private readonly sales: SalesService,
     private readonly finance: FinanceService,
     private readonly master: MasterService,
+    private readonly inventory: InventoryService,
   ) {}
 
   async resourceFacts(ctx: RequestContext, type: string, id?: string): Promise<AiResourceFacts> {
@@ -79,7 +81,7 @@ export class ErpAiProvider implements AppAiProvider {
   canUse(ctx: RequestContext, tool: string): boolean {
     const permissions: Record<string, string> = {
       'erp.purchase.create_draft': 'erp.purchase.write',
-      'erp.purchase.confirm': 'erp.purchase.write',
+      'erp.purchase.confirm': 'erp.purchase.approve',
       'erp.purchase.receive': 'erp.purchase.receive',
       'erp.contract.ship': 'erp.sales.ship',
       'erp.finance.record_payment': 'erp.finance.write',
@@ -102,9 +104,13 @@ export class ErpAiProvider implements AppAiProvider {
   }
 
   async shortages(ctx: RequestContext) {
-    this.auth.require(ctx, 'erp.inventory.read');
-    const balances = await this.db.erpInventoryBalance.findMany({ where: { tenantId: ctx.tenantId, product: { active: true } }, include: { product: { select: { id: true, sku: true, name: true, reorderPoint: true } } } });
-    return balances.filter(x => x.quantity <= x.product.reorderPoint).map(x => ({ productId: x.product.id, sku: x.product.sku, name: x.product.name, quantity: x.quantity, reorderPoint: x.product.reorderPoint, suggestedMinimum: Math.max(0, x.product.reorderPoint - x.quantity), source: { appId: this.appId, type: 'inventory', id: x.product.id, version: x.version } }));
+    const items: Array<Awaited<ReturnType<InventoryService['alerts']>>['items'][number]> = [];
+    for (let page = 1; ; page++) {
+      const result = await this.inventory.alerts(ctx, { page, page_size: 100 });
+      items.push(...result.items);
+      if (page * 100 >= result.total) break;
+    }
+    return items.map(x => ({ productId: x.productId, sku: x.sku, name: x.name, quantity: x.quantity, reorderPoint: x.reorderPoint, incomingQty: x.incomingQty, status: x.status, suggestedMinimum: x.suggestedOrderQty, source: { appId: this.appId, type: 'inventory', id: x.productId, version: x.balanceVersion } }));
   }
 
   async extract(ctx: RequestContext, body: unknown) {

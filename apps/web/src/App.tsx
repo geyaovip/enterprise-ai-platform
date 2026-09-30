@@ -9,6 +9,7 @@ import { PurchasePage, PurchaseDetailPage, ContractPage, ContractDetailPage } fr
 import { InventoryPage, FinancePage } from './pages/Operations';
 import { AiPage } from './pages/AiPage';
 import { AdminPage } from './pages/AdminPage';
+import { ChannelPage } from './pages/ChannelPage';
 
 export function App() {
   const [me, setMe] = useState<Me | null>(null);
@@ -39,7 +40,7 @@ function LoginPage({ onLogin, error }: { onLogin: () => Promise<void>; error?: s
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<string | null>(error ?? null);
   const submit = async (event: FormEvent) => { event.preventDefault(); setBusy(true); setMessage(null); try { await api.post('/auth/login', { email, password }); await onLogin(); } catch (e) { setMessage(errorText(e)); } finally { setBusy(false); } };
-  return <main className="login-layout"><form className="login-card" onSubmit={submit}><div className="brand">企业 AI 应用平台</div><h1>登录工作区</h1><p>使用企业管理员开通的账号访问业务数据。</p><Notice text={message} /><Field label="邮箱"><input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></Field><Field label="密码"><input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></Field><button className="primary wide" disabled={busy}>{busy ? '登录中…' : '登录'}</button></form></main>;
+  return <main className="login-layout"><form className="login-card" onSubmit={submit}><div className="brand">知行方舟 · 企业智能业务平台</div><h1>登录工作区</h1><p>使用企业管理员开通的账号访问业务数据。</p><Notice text={message} /><Field label="邮箱"><input type="email" autoComplete="username" required value={email} onChange={e => setEmail(e.target.value)} /></Field><Field label="密码"><input type="password" autoComplete="current-password" required value={password} onChange={e => setPassword(e.target.value)} /></Field><button className="primary wide" disabled={busy}>{busy ? '登录中…' : '登录'}</button></form></main>;
 }
 
 function TenantPicker({ memberships, onLogout }: { memberships: TenantMembership[]; onLogout: () => void }) {
@@ -54,7 +55,7 @@ const erpNav = [
   { path: 'erp/products', label: '商品', roles: ['admin', 'sales', 'purchasing', 'warehouse', 'finance'] },
   { path: 'erp/suppliers', label: '供应商', roles: ['admin', 'purchasing', 'warehouse', 'finance'] },
   { path: 'erp/purchases', label: '采购', roles: ['admin', 'purchasing', 'warehouse', 'finance'] },
-  { path: 'erp/inventory', label: '库存', roles: ['admin', 'warehouse'] },
+  { path: 'erp/inventory', label: '库存与预警', roles: ['admin', 'purchasing', 'warehouse'] },
   { path: 'erp/finance', label: '应收应付', roles: ['admin', 'finance'] },
   { path: 'ai', label: 'AI 助手', roles: ['admin', 'sales', 'purchasing', 'warehouse', 'finance'] },
 ] as const;
@@ -75,7 +76,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
   return <div className="app-shell">
     <button className="mobile-menu" aria-label="打开导航" onClick={() => setMenu(true)}>☰ 菜单</button>
     {menu && <button className="scrim" aria-label="关闭导航" onClick={() => setMenu(false)} />}
-    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand">企业 AI 应用平台</div><div className="tenant-label">{membership.tenant.name}<small>当前应用：{erpEnabled ? 'ERP' : '未启用'}</small></div><nav aria-label="主导航">{erpEnabled && erpNav.filter(item => (item.roles as readonly string[]).includes(membership.role)).map(({ path, label }) => <Link key={path} className={location.pathname === `${prefix}/${path}` ? 'active' : ''} to={`${prefix}/${path}`}>{label}</Link>)}{membership.role === 'admin' && <Link className={location.pathname.includes('/admin') ? 'active' : ''} to={`${prefix}/admin`}>企业管理</Link>}</nav><div className="sidebar-footer"><Link to="/tenants">切换企业</Link><Link to={`${prefix}/account`}>{me.user.name} · 账号</Link><button onClick={onLogout}>退出</button></div></aside>
+    <aside className={`sidebar ${menu ? 'open' : ''}`}><div className="brand">知行方舟</div><div className="tenant-label">{membership.tenant.name}<small>当前应用：{erpEnabled ? 'ERP' : '未启用'}</small></div><nav aria-label="主导航">{erpEnabled && erpNav.filter(item => (item.roles as readonly string[]).includes(membership.role)).map(({ path, label }) => <Link key={path} className={location.pathname === `${prefix}/${path}` ? 'active' : ''} to={`${prefix}/${path}`}>{label}</Link>)}<Link className={location.pathname.includes('/channels') ? 'active' : ''} to={`${prefix}/channels`}>工作通道</Link>{membership.role === 'admin' && <Link className={location.pathname.includes('/admin') ? 'active' : ''} to={`${prefix}/admin`}>企业管理</Link>}</nav><div className="sidebar-footer"><Link to="/tenants">切换企业</Link><Link to={`${prefix}/account`}>{me.user.name} · 账号</Link><button onClick={onLogout}>退出</button></div></aside>
     <main className="content"><Notice text={error} />{apps === null ? <Loading /> : <Routes>
       <Route index element={<Navigate to={erpEnabled ? 'erp' : 'admin'} replace />} />
       <Route path="erp" element={erpEnabled ? <DashboardPage tenantKey={tenantKey} /> : <Empty text="ERP 尚未启用，请联系企业管理员。" />} />
@@ -91,6 +92,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
       <Route path="erp/finance" element={erpEnabled ? <FinancePage tenantKey={tenantKey} role={membership.role} /> : <Empty text="ERP 未启用" />} />
       <Route path="ai" element={erpEnabled ? <AiPage tenantKey={tenantKey} /> : <Empty text="ERP 未启用" />} />
       <Route path="admin" element={membership.role === 'admin' ? <AdminPage tenantKey={tenantKey} onAppsChanged={() => api.get<TenantApp[]>(tenantApi(tenantKey, '/apps')).then(setApps)} /> : <Empty text="无权访问企业管理" />} />
+      <Route path="channels" element={<ChannelPage tenantKey={tenantKey} isAdmin={membership.role === 'admin'} />} />
       <Route path="account" element={<AccountPage user={me.user} onChanged={onLogout} />} />
       <Route path="*" element={<div><PageTitle title="页面不存在" /><Link to={`${prefix}/erp`}>返回概览</Link></div>} />
     </Routes>}</main>
