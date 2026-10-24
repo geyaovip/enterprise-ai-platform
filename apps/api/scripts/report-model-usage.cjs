@@ -1,0 +1,11 @@
+// Read-only operational report. Do not add legacy AiExecution/AiUsage/UsageRecord again.
+const {PrismaService}=require('../dist/modules/prisma.service');
+(async()=>{
+ const options=Object.fromEntries(process.argv.slice(2).map(a=>{const n=a.indexOf('=');return[a.slice(0,n),a.slice(n+1)];}));
+ const from=new Date(options['--since']);if(!options['--since']||!Number.isFinite(from.getTime()))throw Error('Usage: report-model-usage.cjs --since=ISO_DATE [--environment=test|production] [--batch=UUID] [--tenant=UUID] [--app=erp] [--purpose=document_extract]');
+ const db=new PrismaService(),where={createdAt:{gte:from},...(options['--environment']?{environment:options['--environment']}:{}),...(options['--batch']?{batchId:options['--batch']}:{}),...(options['--tenant']?{tenantId:options['--tenant']}:{}),...(options['--app']?{appId:options['--app']}:{}),...(options['--purpose']?{purpose:options['--purpose']}:{})};
+ try{const groups=await db.aiModelUsage.groupBy({by:['appId','purpose','source','environment','model','requestedModel','status','usageStatus'],where,_count:{_all:true},_sum:{inputTokens:true,outputTokens:true,totalTokens:true,cachedInputTokens:true,reasoningTokens:true}});
+ const complete=groups.filter(g=>g.usageStatus==='reported'),unknown=groups.filter(g=>!['reported','not_requested'].includes(g.usageStatus));
+ console.log(JSON.stringify({since:from.toISOString(),scope:'AiModelUsage only; provider-reported runtime aggregate, not account bill',knownInputTokens:complete.reduce((n,g)=>n+(g._sum.inputTokens||0),0),knownOutputTokens:complete.reduce((n,g)=>n+(g._sum.outputTokens||0),0),knownTotalTokens:complete.reduce((n,g)=>n+(g._sum.totalTokens||0),0),incomplete:unknown.length>0,unknownOrPendingRuns:unknown.reduce((n,g)=>n+g._count._all,0),groups,notes:['model=null means the gateway did not expose the real model; requestedModel can be a virtual agent.','Cache/reasoning counts are subsets, never added to input/output totals.','Use batch/environment filters to separate paid QA from synthetic fixtures.','Historical records before the ledger migration need separate deduplicated recovery; do not sum legacy copies.']},null,2));
+ }finally{await db.$disconnect();}
+})().catch(e=>{console.error(e.message);process.exitCode=1;});

@@ -1,5 +1,5 @@
 User-agent: *
 Allow: /
-Disallow: /login
-Disallow: /tenants
-Disallow: /t/
+Disallow: /api/
+
+Sitemap: https://zhixingark.cn/sitemap.xml

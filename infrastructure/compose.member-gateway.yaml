@@ -1,0 +1,39 @@
+# One Compose project per membership. Never share a state directory between members.
+services:
+  gateway:
+    image: ghcr.io/openclaw/openclaw:2026.9.7@sha256:0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc
+    user: "1000:1000"
+    command: ["node", "dist/index.js", "gateway", "run"]
+    environment:
+      HOME: /state
+      XDG_CACHE_HOME: /state/.cache
+      TMPDIR: /state/tmp
+      OPENCLAW_STATE_DIR: /state
+      OPENCLAW_CONFIG_PATH: /state/openclaw.json
+      NODE_OPTIONS: --max-old-space-size=768
+    volumes:
+      - ${OPENCLAW_MEMBER_DIR:?Set the private membership state directory}:/state
+    networks:
+      platform:
+        aliases:
+          - gateway-${OPENCLAW_MEMBER_ID:?Set the membership UUID}
+    # No host port, host mounts, Docker socket, browser or shared member state.
+    read_only: true
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    pids_limit: 128
+    mem_limit: ${OPENCLAW_MEMORY_LIMIT:-1536m}
+    cpus: ${OPENCLAW_CPU_LIMIT:-2}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "const fs=require('node:fs'); const c=JSON.parse(fs.readFileSync('/state/openclaw.json')); fetch('http://127.0.0.1:18789/readyz',{headers:{authorization:'Bearer '+c.gateway.auth.token}}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 8
+      start_period: 90s
+networks:
+  platform:
+    external: true
+    name: enterprise-ai-platform_default

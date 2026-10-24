@@ -4,16 +4,33 @@
   "private": true,
   "scripts": {
     "dev": "pnpm build && node dist/main.js",
-    "build": "prisma generate && tsc -p tsconfig.json",
+    "build": "prisma generate && tsc -p tsconfig.json && node scripts/copy-knowledge-parser.cjs",
     "typecheck": "prisma generate && tsc --noEmit -p tsconfig.json",
     "start": "node dist/main.js",
     "start:worker": "node dist/worker.js",
     "db:generate": "prisma generate",
     "db:deploy": "prisma migrate deploy",
     "db:migrate": "prisma migrate dev",
+    "test:account-management-ai": "pnpm build && node tests/account-management-ai-flow.cjs",
     "test:m1": "tsx tests/m1-smoke.ts",
     "test:platform": "pnpm build && node tests/platform-flow.cjs",
-    "bootstrap": "tsx src/bootstrap.ts"
+    "bootstrap": "tsx src/bootstrap.ts",
+    "test:phase1": "pnpm build && node tests/phase1-flow.cjs",
+    "bootstrap:operator": "tsx src/bootstrap-operator.ts",
+    "test:openclaw": "pnpm build && node tests/openclaw-gateway-smoke.cjs",
+    "test:ragflow-cloud": "pnpm build && node tests/ragflow-cloud-smoke.cjs",
+    "test:collaboration": "pnpm build && node tests/collaboration-flow.cjs",
+    "test:customer-ready": "pnpm build && node tests/customer-ready-flow.cjs",
+    "test:erp-completeness": "pnpm build && node tests/erp-completeness-flow.cjs",
+    "test:native-knowledge": "pnpm build && node tests/native-knowledge-flow.cjs",
+    "test:orchestration": "pnpm build && node tests/orchestration-flow.cjs",
+    "test:ai-memory": "pnpm build && node tests/ai-memory-flow.cjs",
+    "test:crm": "pnpm build && node tests/crm-flow.cjs && node tests/crm-edges.cjs && node tests/crm-files.cjs && node tests/crm-ai-boundary.cjs",
+    "test:ai-usage": "pnpm build && node tests/thinking-mode.cjs && node tests/ai-usage-efficiency.cjs",
+    "test:openclaw-retry-budget": "node tests/openclaw-retry-budget.cjs",
+    "test:erp-ai-efficiency": "pnpm build && node tests/erp-ai-efficiency.cjs",
+    "test:crm-real-model": "pnpm build && node tests/crm-real-model.cjs",
+    "test:mes": "pnpm build && node tests/mes-flow.cjs && node tests/mes-ai.cjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.74.0",
@@ -27,7 +44,8 @@
     "pg": "8.23.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "zod": "4.6.5"
+    "zod": "4.6.5",
+    "express": "5.2.1"
   },
   "devDependencies": {
     "@types/cookie-parser": "1.4.10",

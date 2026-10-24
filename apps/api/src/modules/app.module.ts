@@ -1,3 +1,51 @@
+import {registerMesContract} from './mes/public-contract';
+import {MesService} from './mes/mes.service';
+import {MesController} from './mes/mes.controller';
+import {MesAiProvider} from './mes/mes-ai.provider';
+import {MES_MANIFEST,mesPermissions} from './mes/mes-permissions';
+import {registerCrmContract} from './crm/public-contract';
+import {CrmComposerDraftService} from './crm/composer-draft.service';
+import {CrmAiProvider} from './crm/crm-ai.provider';
+import {CrmController} from './crm/crm.controller';
+import {crmPermissions,CRM_MANIFEST} from './crm/crm-permissions';
+import {CrmCore} from './crm/crm-core.service';
+import {CrmMetricsService} from './crm/metrics.service';
+import {CrmCustomerService} from './crm/customer.service';
+import {CrmSettingsService} from './crm/settings.service';
+import {CrmSegmentService} from './crm/segment.service';
+import {CrmTaskService} from './crm/operation-task.service';
+import {CrmImportService} from './crm/import.service';
+import { AiMemoryService } from './ai/ai-memory.service';
+import { MemoryCoreClient } from './ai/memory-core.client';
+import { AiContextService } from './ai/ai-context.service';
+import { ManagementAiProvider } from './ai/management-ai.provider';
+import { OrchestrationController, OperationsController } from './orchestration/orchestration.controller';
+import { APPLICATION_COMMANDS, CommandRegistry } from './orchestration/command-registry';
+import { CommandBus } from './orchestration/command-bus';
+import { TaskService } from './orchestration/task.service';
+import { ApplicationCollaborationService } from './orchestration/collaboration.service';
+import { QuotaService } from './orchestration/quota.service';
+import { CommercialService } from './orchestration/commercial.service';
+import { OperatingEventService } from './erp/operating-event.service';
+import { ReplenishmentService } from './erp/replenishment.service';
+import { registerErpContract } from './erp/public-contract';
+import { WorkflowService } from './erp/workflow.service';
+import { WorkflowController } from './erp/workflow.controller';
+import { InvitationService } from './platform/invitation.service';
+import { AccountingService } from './erp/accounting.service';
+import { BusinessService } from './erp/business.service';
+import { CorrectionService } from './erp/correction.service';
+import { BusinessController } from './erp/business.controller';
+import { CollaborationService } from './erp/collaboration.service';
+import { ReminderService } from './erp/reminder.service';
+import { RuntimeAdapterRegistry } from './ai/runtime-registry';
+import { KnowledgeEngineRegistry } from './knowledge/engine-registry';
+import { OperatorController } from './platform/operator.controller';
+import { InfrastructureService } from './platform/infrastructure.service';
+import { KnowledgeController } from './knowledge/knowledge.controller';
+import { KnowledgeService } from './knowledge/knowledge.service';
+import { KnowledgeEngineControlService } from './knowledge/engine-control.service';
+import { KnowledgeProcessor } from './knowledge/knowledge.processor';
 import { Module } from '@nestjs/common';
 import { HealthController } from './health.controller';
 import { PrismaService } from './prisma.service';
@@ -15,8 +63,23 @@ import { FinanceService } from './erp/finance.service';
 import { ModelGateway } from './ai/model.gateway';
 import { AiService } from './ai/ai.service';
 import { AiController } from './ai/ai.controller';
+import { ApplicationRegistry } from './platform/application-registry';
+import { APP_MANIFESTS } from './platform/app-registry';
+import { erpPermissions } from './erp/erp-permissions';
+import { AiProviderRegistry } from './ai/provider-registry';
 import { APP_AI_PROVIDER } from './ai/app-ai-provider';
 import { ErpAiProvider } from './erp/erp-ai.provider';
+import { AgentExecutionService } from './ai/agent.runtime';
+import { ManagedRuntimeService } from './ai/managed-runtime.service';
+import { PersonalNotificationsService, NOTIFICATION_CONTRIBUTORS } from './platform/personal-notifications.service';
+import { ToolExecutor } from './ai/tool-executor';
+import { ErpDraftSkill } from './erp/erp-draft.skill';
+import { WorkItemsService } from './erp/work-items.service';
+import { InvoiceService } from './erp/invoice.service';
+import { ReceiptService } from './erp/receipt.service';
 
-@Module({ controllers: [HealthController, PlatformController, ChannelController, ErpController, AiController], providers: [PrismaService, AuthService, PlatformService, ChannelService, MasterService, PurchaseService, SalesService, InventoryService, FinanceService, ModelGateway, ErpAiProvider, { provide: APP_AI_PROVIDER, useExisting: ErpAiProvider }, AiService], exports: [PrismaService, AuthService] })
+@Module({ controllers: [MesController,CrmController,OrchestrationController, OperationsController, WorkflowController, BusinessController, OperatorController, KnowledgeController, HealthController, PlatformController, ChannelController, ErpController, AiController], providers: [MesService,MesAiProvider,CrmComposerDraftService,CrmAiProvider,CrmCore,CrmMetricsService,CrmCustomerService,CrmSettingsService,CrmSegmentService,CrmTaskService,CrmImportService,AiMemoryService, MemoryCoreClient, AiContextService, PersonalNotificationsService, {provide:NOTIFICATION_CONTRIBUTORS,inject:[AuthService,CollaborationService],useFactory:(auth:AuthService,erp:CollaborationService)=>[{
+ appId:'erp',feed:async(ctx:any,page:number)=>erp.notifications(await auth.taskContext({...ctx,appId:'erp',taskId:'notifications'}),{page,page_size:100}),
+ read:async(ctx:any,id:string)=>erp.readNotification(await auth.taskContext({...ctx,appId:'erp',taskId:'notifications'}),id),
+}]}, ManagedRuntimeService, CommandBus, TaskService, ApplicationCollaborationService, QuotaService, CommercialService, OperatingEventService, ReplenishmentService, {provide:APPLICATION_COMMANDS,inject:[PrismaService,PurchaseService,InventoryService,MasterService,SalesService,CrmTaskService,CrmSegmentService,CrmCustomerService,CrmMetricsService,MesService],useFactory:(db:PrismaService,purchase:PurchaseService,inventory:InventoryService,master:MasterService,sales:SalesService,crmTasks:CrmTaskService,crmSegments:CrmSegmentService,crmCustomers:CrmCustomerService,crmMetrics:CrmMetricsService,mes:MesService)=>{const registry=new CommandRegistry();registerErpContract(registry,db,purchase,inventory,master,sales);registerCrmContract(registry,crmTasks,crmSegments,crmCustomers,crmMetrics);registerMesContract(registry,mes);return registry;}}, {provide: ApplicationRegistry, inject:[PrismaService],useFactory:(db:PrismaService)=>{const registry=new ApplicationRegistry(); registry.register(APP_MANIFESTS.find(a=>a.appId==='erp')!,(tenant,role,member)=>erpPermissions(db,tenant,role,member));registry.register(MES_MANIFEST,(tenant,role,member)=>mesPermissions(db,tenant,role,member));registry.register(CRM_MANIFEST,(tenant,role,member)=>crmPermissions(db,tenant,role,member));return registry;}}, WorkflowService, InvitationService, AccountingService, BusinessService, CorrectionService, ReminderService, CollaborationService, RuntimeAdapterRegistry, KnowledgeEngineRegistry, InfrastructureService, KnowledgeService, KnowledgeEngineControlService, KnowledgeProcessor, PrismaService, AuthService, PlatformService, ChannelService, MasterService, PurchaseService, SalesService, InventoryService, FinanceService, WorkItemsService, InvoiceService, ReceiptService, ModelGateway, AgentExecutionService, ErpDraftSkill, ErpAiProvider, { provide: APP_AI_PROVIDER, inject:[ErpAiProvider,CrmAiProvider,PrismaService,MesAiProvider], useFactory:(erp:ErpAiProvider,crm:CrmAiProvider,db:PrismaService,mes:MesAiProvider)=>{const registry=new AiProviderRegistry();registry.register(erp);registry.register(crm);registry.register(mes);registry.register(new ManagementAiProvider(db,'tenant_admin'));registry.register(new ManagementAiProvider(db,'platform_admin'));return registry;} }, ToolExecutor, AiService], exports: [PrismaService, AuthService] })
 export class AppModule {}

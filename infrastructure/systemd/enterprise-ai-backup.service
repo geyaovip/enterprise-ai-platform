@@ -1,0 +1,12 @@
+[Unit]
+Description=Enterprise AI project consistent backup
+After=docker.service
+Requires=docker.service
+OnFailure=enterprise-ai-backup-alert.service
+[Service]
+Type=oneshot
+User=ubuntu
+WorkingDirectory=/opt/apaas/enterprise-ai-platform/current
+Environment=SUITE_SHARED_SERVER=1
+ExecStart=/usr/bin/bash infrastructure/scheduled-backup.sh
+TimeoutStartSec=600

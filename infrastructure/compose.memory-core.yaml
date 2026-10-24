@@ -1,0 +1,35 @@
+# Private, offline memory-core index. SQL remains the source of truth.
+services:
+  memory-core:
+    image: enterprise-ai-platform/memory-core:${RELEASE_TAG:?Set RELEASE_TAG}
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.memory-core
+    environment:
+      MEMORY_CORE_TOKEN: ${MEMORY_CORE_TOKEN:?Set a private token of at least 24 characters}
+    volumes:
+      - memory_core_index:/var/lib/suite-memory
+    read_only: true
+    tmpfs:
+      - /tmp:size=96m,mode=1777
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    mem_limit: 512m
+    cpus: 1
+    pids_limit: 96
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:18790/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 8
+  api:
+    environment:
+      MEMORY_CORE_URL: http://memory-core:18790
+      MEMORY_CORE_TOKEN: ${MEMORY_CORE_TOKEN:?Set MEMORY_CORE_TOKEN}
+  worker:
+    environment:
+      MEMORY_CORE_URL: http://memory-core:18790
+      MEMORY_CORE_TOKEN: ${MEMORY_CORE_TOKEN:?Set MEMORY_CORE_TOKEN}
+volumes:
+  memory_core_index:

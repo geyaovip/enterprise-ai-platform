@@ -1,7 +1,27 @@
 export default {
   async fetch(request, env) {
     const url = new URL(request.url);
-    if (!url.pathname.startsWith('/api/')) return env.ASSETS.fetch(request);
+    if ((url.hostname === 'zhixingark.cn' || url.hostname === 'www.zhixingark.cn') &&
+        (url.hostname !== 'zhixingark.cn' || url.protocol !== 'https:')) {
+      url.hostname = 'zhixingark.cn'; url.protocol = 'https:';
+      return Response.redirect(url.toString(), 308);
+    }
+    for (const prefix of ['/tenant-admin', '/platform-admin']) {
+      if (url.pathname === prefix) {
+        url.pathname += '/';
+        return Response.redirect(url.toString(), 308);
+      }
+    }
+    if (!url.pathname.startsWith('/api/')) {
+      const frontend = url.pathname.startsWith('/tenant-admin/') ? env.TENANT_ADMIN
+        : url.pathname.startsWith('/platform-admin/') ? env.PLATFORM_ADMIN
+          : env.WORKSPACE;
+      try {
+        return await frontend.fetch(request);
+      } catch {
+        return new Response('页面暂时不可用', { status: 502 });
+      }
+    }
 
     if (!env.API_ORIGIN) {
       return Response.json({ error: { code: 'API_NOT_CONFIGURED', message: 'API 尚未配置' } }, { status: 503 });

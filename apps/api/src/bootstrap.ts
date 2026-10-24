@@ -24,6 +24,7 @@ async function main() {
       const root = await tx.orgUnit.create({ data: { tenantId: tenant.id, name: tenantName } });
       await tx.membershipOrg.create({ data: { tenantId: tenant.id, membershipId: member.id, orgUnitId: root.id, primary: true } });
       await tx.tenantApp.create({ data: { tenantId: tenant.id, appId: 'erp' } });
+      await tx.tenantCapability.createMany({ data: ['ai', 'knowledge'].map(capability => ({ tenantId: tenant.id, capability, delivered: true, enabled: true })) });
       await tx.auditEvent.create({ data: { tenantId: tenant.id, userId: user.id, membershipId: member.id, appId: 'platform', requestId: 'bootstrap', action: 'platform.tenant.bootstrap', resourceType: 'Tenant', resourceId: tenant.id } });
       return { tenantId: tenant.id, slug: tenant.slug, adminId: user.id };
     });

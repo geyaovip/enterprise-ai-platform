@@ -16,6 +16,14 @@ services:
     profiles:
       - standalone-web
 
+  admin:
+    profiles:
+      - standalone-web
+
+  platform-admin:
+    profiles:
+      - standalone-web
+
 networks:
   shared_proxy:
     external: true

@@ -1,0 +1,11 @@
+# A NEW database volume is intentional. Never mount an Alpine PostgreSQL volume
+# into this Debian image. Back up and restore when upgrading an existing database.
+services:
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17-bookworm@sha256:3e8b3adfd27b5707128f60956f62a793c3c9326ea8cfaf0eab7adccb5d700b21
+    pull_policy: if_not_present
+    volumes:
+      - suite_native_postgres_data:/var/lib/postgresql/data
+      - ./enable-native-knowledge.sql:/docker-entrypoint-initdb.d/20-native-knowledge.sql:ro
+volumes:
+  suite_native_postgres_data:

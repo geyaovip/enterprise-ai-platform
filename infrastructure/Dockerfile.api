@@ -1,17 +1,21 @@
 FROM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6 AS build
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends openssl python3 poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.19.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY apps/admin/package.json apps/admin/package.json
+COPY apps/platform-admin/package.json apps/platform-admin/package.json
+COPY packages/frontend/package.json packages/frontend/package.json
 RUN pnpm install --frozen-lockfile
 COPY apps/api apps/api
+COPY infrastructure/crm-skills infrastructure/crm-skills
 RUN DATABASE_URL=postgresql://build:build@127.0.0.1:5432/build pnpm --filter @suite/api build
 
 FROM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends openssl && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends openssl python3 poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.19.0 --activate
 COPY --from=build /app /app
 ENV NODE_ENV=production

@@ -1,0 +1,9 @@
+[Unit]
+Description=Enterprise AI nightly backup
+[Timer]
+OnCalendar=*-*-* 03:30:00
+RandomizedDelaySec=600
+Persistent=true
+Unit=enterprise-ai-backup.service
+[Install]
+WantedBy=timers.target

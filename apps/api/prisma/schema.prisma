@@ -9,56 +9,69 @@ datasource db {
 }
 
 model Tenant {
-  id        String   @id @default(uuid())
-  slug      String   @unique
+  id        String              @id @default(uuid())
+  slug      String              @unique
   name      String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
+  active    Boolean             @default(true)
+  createdAt DateTime            @default(now())
   members   Membership[]
   orgUnits  OrgUnit[]
   apps      TenantApp[]
   audits    AuditEvent[]
   channels  ChannelConnection[]
+  erpWorkflows ErpWorkflow[]
+  selfServiceOwnerId String? @unique
+  selfServiceOwner User? @relation(fields: [selfServiceOwnerId], references: [id])
 }
 
 model User {
   id           String       @id @default(uuid())
-  email        String       @unique
+  email        String?      @unique
+  account      String?      @unique
   name         String
   passwordHash String
+  platformRole String?
   active       Boolean      @default(true)
   createdAt    DateTime     @default(now())
   memberships  Membership[]
   sessions     Session[]
+  createdTenant Tenant?
 }
 
 model Membership {
-  id        String   @id @default(uuid())
-  tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
-  userId    String
-  user      User     @relation(fields: [userId], references: [id])
-  role      String
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  orgs      MembershipOrg[]
+  id                String                @id @default(uuid())
+  tenantId          String
+  tenant            Tenant                @relation(fields: [tenantId], references: [id])
+  userId            String
+  user              User                  @relation(fields: [userId], references: [id])
+  role              String
+  active            Boolean               @default(true)
+  createdAt         DateTime              @default(now())
+  orgs              MembershipOrg[]
+  createdTasks      ErpTask[]             @relation("ErpTaskCreator")
+  assignedTasks     ErpTask[]             @relation("ErpTaskAssignee")
+  notifications     ErpNotification[]
+  announcements     ErpAnnouncement[]
+  announcementReads ErpAnnouncementRead[]
+
   @@unique([tenantId, userId])
   @@unique([id, tenantId])
   @@index([userId, active])
 }
 
 model OrgUnit {
-  id        String   @id @default(uuid())
+  id        String          @id @default(uuid())
   tenantId  String
-  tenant    Tenant   @relation(fields: [tenantId], references: [id])
+  tenant    Tenant          @relation(fields: [tenantId], references: [id])
   parentId  String?
-  parent    OrgUnit? @relation("OrgTree", fields: [parentId], references: [id])
-  children  OrgUnit[] @relation("OrgTree")
+  parent    OrgUnit?        @relation("OrgTree", fields: [parentId], references: [id])
+  children  OrgUnit[]       @relation("OrgTree")
   name      String
-  active    Boolean  @default(true)
-  version   Int      @default(1)
-  createdAt DateTime @default(now())
+  active    Boolean         @default(true)
+  version   Int             @default(1)
+  createdAt DateTime        @default(now())
   members   MembershipOrg[]
+
   @@unique([id, tenantId])
   @@index([tenantId, parentId])
 }
@@ -70,6 +83,7 @@ model MembershipOrg {
   orgUnitId    String
   orgUnit      OrgUnit    @relation(fields: [orgUnitId, tenantId], references: [id, tenantId])
   primary      Boolean    @default(false)
+
   @@id([membershipId, orgUnitId])
   @@index([tenantId, orgUnitId])
 }
@@ -80,7 +94,9 @@ model TenantApp {
   tenant    Tenant   @relation(fields: [tenantId], references: [id])
   appId     String
   enabled   Boolean  @default(true)
+  granted   Boolean  @default(true)
   createdAt DateTime @default(now())
+
   @@unique([tenantId, appId])
 }
 
@@ -91,6 +107,7 @@ model Session {
   tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
+
   @@index([userId, expiresAt])
 }
 
@@ -107,64 +124,69 @@ model AuditEvent {
   resourceId   String
   detail       Json?
   createdAt    DateTime @default(now())
+
   @@index([tenantId, appId, resourceType, resourceId, createdAt])
   @@index([requestId])
 }
 
 model ChannelConnection {
-  id               String   @id @default(uuid())
+  id               String            @id @default(uuid())
   tenantId         String
-  tenant           Tenant   @relation(fields: [tenantId], references: [id])
+  tenant           Tenant            @relation(fields: [tenantId], references: [id])
   provider         String
   appId            String
   secretCiphertext String
-  status           String   @default("configured")
+  status           String            @default("configured")
   lastError        String?
   connectedAt      DateTime?
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   identities       ChannelIdentity[]
   deliveries       ChannelDelivery[]
+
   @@unique([tenantId, provider])
   @@unique([provider, appId])
 }
 
 model ChannelConnectAttempt {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   tenantId     String
   membershipId String
   provider     String
-  status       String   @default("starting")
+  status       String    @default("starting")
   qrUrl        String?
   expiresAt    DateTime?
   errorCode    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
   @@index([tenantId, membershipId, createdAt])
 }
 
 model ChannelIdentity {
-  id             String   @id @default(uuid())
+  id             String            @id @default(uuid())
   tenantId       String
   connectionId   String
   connection     ChannelConnection @relation(fields: [connectionId], references: [id])
   membershipId   String
   externalUserId String
-  createdAt      DateTime @default(now())
+  createdAt      DateTime          @default(now())
+
   @@unique([connectionId, membershipId])
   @@unique([connectionId, externalUserId])
   @@index([tenantId, membershipId])
 }
 
 model ChannelPairCode {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   tenantId     String
   connectionId String
   membershipId String
-  codeHash     String   @unique
+  codeHash     String    @unique
   expiresAt    DateTime
   usedAt       DateTime?
-  createdAt    DateTime @default(now())
+  createdAt    DateTime  @default(now())
+
   @@index([tenantId, membershipId, createdAt])
 }
 
@@ -176,275 +198,433 @@ model ChannelChatSession {
   externalChatId String
   conversationId String
   createdAt      DateTime @default(now())
+
   @@unique([connectionId, externalChatId, membershipId])
 }
 
 model ChannelInbound {
-  id           String   @id @default(uuid())
-  connectionId String
-  messageId    String
-  senderId     String
-  chatId       String
-  chatType     String
-  content      String
-  status       String   @default("queued")
-  attempts     Int      @default(0)
+  id            String   @id @default(uuid())
+  connectionId  String
+  messageId     String
+  senderId      String
+  chatId        String
+  chatType      String
+  content       String
+  status        String   @default("queued")
+  attempts      Int      @default(0)
   nextAttemptAt DateTime @default(now())
-  replyText    String?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  replyText     String?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
   @@unique([connectionId, messageId])
   @@index([status, nextAttemptAt])
 }
 
 model ChannelDelivery {
-  id                   String   @id @default(uuid())
-  tenantId             String
-  connectionId         String
-  connection           ChannelConnection @relation(fields: [connectionId], references: [id])
-  membershipId         String
-  eventKey             String
-  title                String
-  body                 String
-  status               String   @default("queued")
-  attempts             Int      @default(0)
-  nextAttemptAt        DateTime @default(now())
-  providerMessageId    String?
-  errorCode            String?
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
-  sentAt               DateTime?
+  id                String            @id @default(uuid())
+  tenantId          String
+  connectionId      String
+  connection        ChannelConnection @relation(fields: [connectionId], references: [id])
+  membershipId      String
+  eventKey          String
+  title             String
+  body              String
+  status            String            @default("queued")
+  attempts          Int               @default(0)
+  nextAttemptAt     DateTime          @default(now())
+  providerMessageId String?
+  errorCode         String?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+  sentAt            DateTime?
+
   @@unique([connectionId, membershipId, eventKey])
   @@index([status, nextAttemptAt])
 }
 
 model ErpCustomer {
-  id                String   @id @default(uuid())
+  id                String               @id @default(uuid())
   tenantId          String
   code              String
   name              String
   contactName       String?
   phone             String?
   industry          String?
+  address           String?
+  taxNumber         String?
+  paymentDays       Int                  @default(0)
+  creditLimit       Decimal?             @db.Decimal(18, 2)
   ownerMembershipId String?
-  active            Boolean  @default(true)
-  createdAt         DateTime @default(now())
+  active            Boolean              @default(true)
+  createdAt         DateTime             @default(now())
   opportunities     ErpOpportunity[]
   contracts         ErpSalesContract[]
+  incomingReceipts  ErpIncomingReceipt[]
+
   @@unique([tenantId, code])
   @@index([tenantId, ownerMembershipId])
 }
 
 model ErpOpportunity {
-  id                String   @id @default(uuid())
+  id                String                   @id @default(uuid())
   tenantId          String
   customerId        String
-  customer          ErpCustomer @relation(fields: [customerId], references: [id])
+  customer          ErpCustomer              @relation(fields: [customerId], references: [id])
   name              String
-  stage             String   @default("discovery")
-  estimatedAmount   Decimal  @db.Decimal(18, 2)
+  stage             String                   @default("discovery")
+  estimatedAmount   Decimal                  @db.Decimal(18, 2)
   ownerMembershipId String
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  createdAt         DateTime                 @default(now())
+  updatedAt         DateTime                 @updatedAt
   contracts         ErpSalesContract[]
   followups         ErpOpportunityFollowup[]
+
   @@index([tenantId, ownerMembershipId, stage])
 }
 
 model ErpOpportunityFollowup {
-  id                String   @id @default(uuid())
+  id                String         @id @default(uuid())
   tenantId          String
   opportunityId     String
   opportunity       ErpOpportunity @relation(fields: [opportunityId], references: [id])
   actorMembershipId String
   note              String
   nextActionAt      DateTime?
-  createdAt         DateTime @default(now())
+  createdAt         DateTime       @default(now())
+
   @@index([tenantId, opportunityId, createdAt])
   @@index([tenantId, nextActionAt])
 }
 
 model ErpProduct {
-  id            String   @id @default(uuid())
+  id            String               @id @default(uuid())
   tenantId      String
   sku           String
   name          String
   category      String?
-  unit          String   @default("件")
-  salePrice     Decimal  @db.Decimal(18, 2)
-  purchasePrice Decimal  @db.Decimal(18, 2)
-  reorderPoint  Int      @default(0)
-  active        Boolean  @default(true)
-  createdAt     DateTime @default(now())
+  unit          String               @default("件")
+  salePrice     Decimal              @db.Decimal(18, 2)
+  purchasePrice Decimal              @db.Decimal(18, 2)
+  reorderPoint  Float                @default(0)
+  active        Boolean              @default(true)
+  createdAt     DateTime             @default(now())
   balance       ErpInventoryBalance?
   purchaseLines ErpPurchaseLine[]
   salesLines    ErpSalesLine[]
+
   @@unique([tenantId, sku])
 }
 
 model ErpSupplier {
-  id          String   @id @default(uuid())
+  id          String             @id @default(uuid())
   tenantId    String
   code        String
   name        String
   contactName String?
   phone       String?
-  active      Boolean  @default(true)
-  createdAt   DateTime @default(now())
+  address     String?
+  taxNumber   String?
+  paymentDays Int                @default(0)
+  active      Boolean            @default(true)
+  createdAt   DateTime           @default(now())
   purchases   ErpPurchaseOrder[]
+
   @@unique([tenantId, code])
 }
 
 model ErpPurchaseOrder {
-  id                  String   @id @default(uuid())
-  tenantId            String
-  number              String
-  supplierId          String
-  supplier            ErpSupplier @relation(fields: [supplierId], references: [id])
-  status              String   @default("draft")
-  total               Decimal  @db.Decimal(18, 2)
-  note                String?
-  version             Int      @default(1)
+  id                    String              @id @default(uuid())
+  tenantId              String
+  number                String
+  supplierId            String
+  supplier              ErpSupplier         @relation(fields: [supplierId], references: [id])
+  status                String              @default("draft")
+  total                 Decimal             @db.Decimal(18, 2)
+  note                  String?
+  version               Int                 @default(1)
+  dueAt                 DateTime?
+  deliveryAt            DateTime?
+  deliveryAddress       String?
+  paymentTerms          String?
+  closeReason           String?
   createdByMembershipId String
-  createdAt           DateTime @default(now())
-  updatedAt           DateTime @updatedAt
-  lines               ErpPurchaseLine[]
-  payable             ErpPayable?
+  createdAt             DateTime            @default(now())
+  updatedAt             DateTime            @updatedAt
+  lines                 ErpPurchaseLine[]
+  changes               ErpPurchaseChange[]
+  payable               ErpPayable?
+
   @@unique([tenantId, number])
   @@index([tenantId, status])
 }
 
+model ErpPurchaseChange {
+  id                      String           @id @default(uuid())
+  tenantId                String
+  orderId                 String
+  order                   ErpPurchaseOrder @relation(fields: [orderId], references: [id])
+  baseVersion             Int
+  status                  String           @default("pending")
+  reason                  String
+  reviewReason            String?
+  before                  Json
+  proposed                Json
+  requestedByMembershipId String
+  reviewedByMembershipId  String?
+  createdAt               DateTime         @default(now())
+  reviewedAt              DateTime?
+
+  @@index([tenantId, orderId, createdAt])
+  @@index([tenantId, status, createdAt])
+}
+
 model ErpPurchaseLine {
-  id           String   @id @default(uuid())
-  orderId      String
-  order        ErpPurchaseOrder @relation(fields: [orderId], references: [id])
-  productId    String
-  product      ErpProduct @relation(fields: [productId], references: [id])
-  sku          String
-  name         String
-  quantity     Int
-  receivedQty  Int      @default(0)
-  unitPrice    Decimal  @db.Decimal(18, 2)
-  lineTotal    Decimal  @db.Decimal(18, 2)
+  id              String           @id @default(uuid())
+  orderId         String
+  order           ErpPurchaseOrder @relation(fields: [orderId], references: [id])
+  productId       String
+  product         ErpProduct       @relation(fields: [productId], references: [id])
+  sku             String
+  name            String
+  quantity        Float
+  receivedQty     Float            @default(0)
+  unitPrice       Decimal          @db.Decimal(24, 6)
+  basePrice       Decimal?         @db.Decimal(18, 2)
+  discountPercent Decimal          @default(0) @db.Decimal(6, 3)
+  taxRate         Decimal          @default(0) @db.Decimal(6, 3)
+  taxIncluded     Boolean          @default(true)
+  unit            String           @default("件")
+  unitFactor      Float            @default(1)
+  lineTotal       Decimal          @db.Decimal(18, 2)
+  baseUnit String @default("件")
 }
 
 model ErpSalesContract {
-  id                String   @id @default(uuid())
+  id                String              @id @default(uuid())
   tenantId          String
   number            String
   customerId        String
-  customer          ErpCustomer @relation(fields: [customerId], references: [id])
+  customer          ErpCustomer         @relation(fields: [customerId], references: [id])
   opportunityId     String?
-  opportunity       ErpOpportunity? @relation(fields: [opportunityId], references: [id])
+  opportunity       ErpOpportunity?     @relation(fields: [opportunityId], references: [id])
   ownerMembershipId String
-  status            String   @default("draft")
-  total             Decimal  @db.Decimal(18, 2)
+  status            String              @default("draft")
+  total             Decimal             @db.Decimal(18, 2)
   note              String?
-  version           Int      @default(1)
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
+  version           Int                 @default(1)
+  dueAt             DateTime?
+  deliveryAt        DateTime?
+  deliveryAddress   String?
+  paymentTerms      String?
+  closeReason       String?
+  createdAt         DateTime            @default(now())
+  updatedAt         DateTime            @updatedAt
   lines             ErpSalesLine[]
   receivable        ErpReceivable?
+  invoiceRequests   ErpInvoiceRequest[]
+
   @@unique([tenantId, number])
   @@index([tenantId, ownerMembershipId, status])
 }
 
+model ErpInvoiceRequest {
+  id                      String           @id @default(uuid())
+  tenantId                String
+  contractId              String
+  contract                ErpSalesContract @relation(fields: [contractId], references: [id])
+  amount                  Decimal          @db.Decimal(18, 2)
+  status                  String           @default("requested")
+  note                    String?
+  requestedByMembershipId String
+  reviewedByMembershipId  String?
+  reviewReason            String?
+  invoiceNumber           String?
+  registeredAt            DateTime?
+  voidReference           String?
+  createdAt               DateTime         @default(now())
+  updatedAt               DateTime         @updatedAt
+
+  @@unique([tenantId, invoiceNumber])
+  @@index([tenantId, contractId, status])
+  @@index([tenantId, status, createdAt])
+}
+
 model ErpSalesLine {
-  id          String   @id @default(uuid())
-  contractId  String
-  contract    ErpSalesContract @relation(fields: [contractId], references: [id])
-  productId   String
-  product     ErpProduct @relation(fields: [productId], references: [id])
-  sku         String
-  name        String
-  quantity    Int
-  shippedQty  Int      @default(0)
-  unitPrice   Decimal  @db.Decimal(18, 2)
-  lineTotal   Decimal  @db.Decimal(18, 2)
+  id              String           @id @default(uuid())
+  contractId      String
+  contract        ErpSalesContract @relation(fields: [contractId], references: [id])
+  productId       String
+  product         ErpProduct       @relation(fields: [productId], references: [id])
+  sku             String
+  name            String
+  quantity        Float
+  shippedQty      Float            @default(0)
+  unitPrice       Decimal          @db.Decimal(24, 6)
+  basePrice       Decimal?         @db.Decimal(18, 2)
+  discountPercent Decimal          @default(0) @db.Decimal(6, 3)
+  taxRate         Decimal          @default(0) @db.Decimal(6, 3)
+  taxIncluded     Boolean          @default(true)
+  unit            String           @default("件")
+  unitFactor      Float            @default(1)
+  lineTotal       Decimal          @db.Decimal(18, 2)
+  baseUnit String @default("件")
 }
 
 model ErpInventoryBalance {
-  id        String   @id @default(uuid())
-  tenantId  String
-  productId String   @unique
-  product   ErpProduct @relation(fields: [productId], references: [id])
-  quantity  Int      @default(0)
-  version   Int      @default(1)
-  updatedAt DateTime @updatedAt
+  id             String     @id @default(uuid())
+  tenantId       String
+  productId      String     @unique
+  product        ErpProduct @relation(fields: [productId], references: [id])
+  quantity       Float      @default(0)
+  version        Int        @default(1)
+  updatedAt      DateTime   @updatedAt
+  inventoryValue Decimal    @default(0) @db.Decimal(18, 2)
+  costEstimated  Boolean    @default(false)
+
+  openingAt DateTime?
   @@index([tenantId, productId])
 }
 
 model ErpStockDocument {
-  id                 String   @id @default(uuid())
-  tenantId           String
-  number             String
-  kind               String
-  sourceId           String
-  note               String?
-  actorMembershipId  String
-  createdAt          DateTime @default(now())
-  movements          ErpStockMovement[]
+  id                String             @id @default(uuid())
+  tenantId          String
+  number            String
+  kind              String
+  sourceId          String
+  note              String?
+  actorMembershipId String
+  createdAt         DateTime           @default(now())
+  movements         ErpStockMovement[]
+
   @@unique([tenantId, number])
   @@index([tenantId, kind, sourceId, createdAt])
 }
 
 model ErpStockMovement {
-  id                String   @id @default(uuid())
+  id                String           @id @default(uuid())
   tenantId          String
   productId         String
   direction         String
-  quantity          Int
+  quantity          Float
   sourceType        String
   sourceId          String
   documentId        String
   document          ErpStockDocument @relation(fields: [documentId], references: [id])
   actorMembershipId String
-  createdAt         DateTime @default(now())
-  @@unique([tenantId, documentId, productId])
+  createdAt         DateTime         @default(now())
+  warehouseId       String?
+  unitCost          Decimal?         @db.Decimal(30, 6)
+  costAmount        Decimal?         @db.Decimal(18, 2)
+  costEstimated     Boolean          @default(false)
+
+  tradeAmount Decimal? @db.Decimal(18, 2)
+  @@index([tenantId, documentId, productId])
   @@index([tenantId, productId, createdAt])
+  grossAmount Decimal? @db.Decimal(18, 2)
 }
 
 model ErpPayable {
-  id         String   @id @default(uuid())
-  tenantId   String
-  orderId    String   @unique
-  order      ErpPurchaseOrder @relation(fields: [orderId], references: [id])
-  amount     Decimal  @db.Decimal(18, 2)
-  paidAmount Decimal  @default(0) @db.Decimal(18, 2)
-  status     String   @default("open")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  payments   ErpPayment[] @relation("PayablePayments")
+  id               String            @id @default(uuid())
+  tenantId         String
+  orderId          String?           @unique
+  order            ErpPurchaseOrder? @relation(fields: [orderId], references: [id])
+  amount           Decimal           @db.Decimal(18, 2)
+  supplierId       String?
+  dueAt            DateTime?
+  openingReference String?
+  paidAmount       Decimal           @default(0) @db.Decimal(18, 2)
+  status           String            @default("open")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  payments         ErpPayment[]      @relation("PayablePayments")
+
   @@index([tenantId, status])
 }
 
 model ErpReceivable {
-  id         String   @id @default(uuid())
-  tenantId   String
-  contractId String   @unique
-  contract   ErpSalesContract @relation(fields: [contractId], references: [id])
-  amount     Decimal  @db.Decimal(18, 2)
-  paidAmount Decimal  @default(0) @db.Decimal(18, 2)
-  status     String   @default("open")
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
-  payments   ErpPayment[] @relation("ReceivablePayments")
+  id               String            @id @default(uuid())
+  tenantId         String
+  contractId       String?           @unique
+  contract         ErpSalesContract? @relation(fields: [contractId], references: [id])
+  amount           Decimal           @db.Decimal(18, 2)
+  customerId       String?
+  dueAt            DateTime?
+  openingReference String?
+  paidAmount       Decimal           @default(0) @db.Decimal(18, 2)
+  status           String            @default("open")
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  payments         ErpPayment[]      @relation("ReceivablePayments")
+
   @@index([tenantId, status])
 }
 
 model ErpPayment {
-  id                String   @id @default(uuid())
+  id                String           @id @default(uuid())
   tenantId          String
   receivableId      String?
-  receivable        ErpReceivable? @relation("ReceivablePayments", fields: [receivableId], references: [id])
+  receivable        ErpReceivable?   @relation("ReceivablePayments", fields: [receivableId], references: [id])
   payableId         String?
-  payable           ErpPayable? @relation("PayablePayments", fields: [payableId], references: [id])
-  amount            Decimal  @db.Decimal(18, 2)
+  payable           ErpPayable?      @relation("PayablePayments", fields: [payableId], references: [id])
+  amount            Decimal          @db.Decimal(18, 2)
   reference         String
+  kind              String           @default("payment")
+  reversalOfId      String?          @unique
+  reversedAt        DateTime?
+  note              String?
+  advanceId         String?
   actorMembershipId String
-  createdAt         DateTime @default(now())
+  receiptClaimId    String?
+  receiptClaim      ErpReceiptClaim? @relation(fields: [receiptClaimId], references: [id])
+  createdAt         DateTime         @default(now())
+
   @@unique([tenantId, receivableId, reference])
   @@unique([tenantId, payableId, reference])
+  @@unique([tenantId, advanceId, reference])
+  @@index([receiptClaimId])
+}
+
+model ErpIncomingReceipt {
+  id                       String            @id @default(uuid())
+  tenantId                 String
+  customerId               String
+  customer                 ErpCustomer       @relation(fields: [customerId], references: [id])
+  reference                String
+  amount                   Decimal           @db.Decimal(18, 2)
+  allocatedAmount          Decimal           @default(0) @db.Decimal(18, 2)
+  status                   String            @default("open")
+  version                  Int               @default(1)
+  receivedAt               DateTime
+  note                     String?
+  registeredByMembershipId String
+  cancelReason             String?
+  createdAt                DateTime          @default(now())
+  updatedAt                DateTime          @updatedAt
+  claims                   ErpReceiptClaim[]
+
+  @@unique([tenantId, reference])
+  @@index([tenantId, customerId, status])
+}
+
+model ErpReceiptClaim {
+  id                      String             @id @default(uuid())
+  tenantId                String
+  receiptId               String
+  receipt                 ErpIncomingReceipt @relation(fields: [receiptId], references: [id])
+  baseVersion             Int
+  status                  String             @default("pending")
+  amount                  Decimal            @db.Decimal(18, 2)
+  allocations             Json
+  requestedByMembershipId String
+  reviewedByMembershipId  String?
+  reviewReason            String?
+  createdAt               DateTime           @default(now())
+  reviewedAt              DateTime?
+  payments                ErpPayment[]
+
+  @@index([tenantId, receiptId, status])
+  @@index([tenantId, status, createdAt])
 }
 
 model AiProviderSettings {
@@ -468,7 +648,45 @@ model AiConversation {
   version      Int      @default(1)
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
+  summary      AiContextSummary?
+
   @@index([tenantId, userId, appId, updatedAt])
+}
+
+model AiContextSummary {
+  conversationId String @id
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  coveredMessages Int
+  sourceDigest String
+  scopeDigest String
+  content String
+  updatedAt DateTime @updatedAt
+}
+
+model AiMemoryEntry {
+  id String @id @default(uuid())
+  tenantId String
+  appId String
+  ownerUserId String?
+  createdByUserId String
+  visibility String
+  kind String
+  title String
+  content String
+  version Int @default(1)
+  expiresAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, appId, ownerUserId, updatedAt])
+}
+
+model AiMemorySetting {
+  tenantId String
+  userId String
+  appId String
+  enabled Boolean @default(true)
+  updatedAt DateTime @updatedAt
+  @@id([tenantId, userId, appId])
 }
 
 model AiAction {
@@ -487,6 +705,7 @@ model AiAction {
   idempotencyKey       String
   createdAt            DateTime @default(now())
   updatedAt            DateTime @updatedAt
+
   @@unique([tenantId, idempotencyKey])
   @@index([tenantId, userId, status, createdAt])
 }
@@ -501,6 +720,7 @@ model AiUsage {
   outputTokens Int?
   status       String
   createdAt    DateTime @default(now())
+
   @@index([tenantId, appId, createdAt])
 }
 
@@ -511,6 +731,7 @@ model AiTask {
   membershipId String
   appId        String
   kind         String
+  requestKey   String?
   input        Json
   status       String    @default("queued")
   result       Json?
@@ -520,6 +741,1256 @@ model AiTask {
   updatedAt    DateTime  @updatedAt
   startedAt    DateTime?
   finishedAt   DateTime?
+
   @@index([status, createdAt])
   @@index([tenantId, userId, appId, createdAt])
+  @@unique([tenantId, membershipId, requestKey])
+}
+
+model PersonalNotification {
+  id                    String   @id @default(uuid())
+  tenantId              String
+  recipientMembershipId String
+  appId                 String
+  kind                  String
+  resourceId            String
+  dedupeKey             String
+  title                 String
+  body                  String
+  readAt                DateTime?
+  createdAt             DateTime @default(now())
+
+  @@unique([tenantId, recipientMembershipId, dedupeKey])
+  @@index([tenantId, recipientMembershipId, createdAt])
+}
+
+model TenantCapability {
+  id         String  @id @default(uuid())
+  tenantId   String
+  capability String
+  delivered  Boolean @default(false)
+  enabled    Boolean @default(false)
+  version    Int     @default(1)
+
+  @@unique([tenantId, capability])
+}
+
+model OperatorAudit {
+  id         String   @id @default(uuid())
+  userId     String
+  action     String
+  tenantId   String?
+  resourceId String
+  detail     Json?
+  createdAt  DateTime @default(now())
+
+  @@index([tenantId, createdAt])
+}
+
+model InfrastructureBinding {
+  id               String   @id @default(uuid())
+  tenantId         String
+  kind             String
+  scopeKey         String
+  provider         String
+  baseUrl          String
+  secretCiphertext String
+  options          Json
+  enabled          Boolean  @default(true)
+  version          Int      @default(1)
+  updatedAt        DateTime @updatedAt
+
+  @@unique([tenantId, kind, scopeKey])
+}
+
+model AiExecution {
+  id             String    @id @default(uuid())
+  tenantId       String
+  membershipId   String
+  sessionId      String
+  requestId      String
+  provider       String
+  bindingId      String?
+  bindingVersion Int?
+  status         String    @default("running")
+  externalId     String?
+  errorCode      String?
+  usage          Json?
+  createdAt      DateTime  @default(now())
+  finishedAt     DateTime?
+
+  @@index([tenantId, membershipId, sessionId, createdAt])
+}
+
+// Operational accounting survives conversation, fixture and tenant teardown.
+// No prompts, credentials or tool arguments; no cascading business foreign keys.
+model AiModelUsage {
+  id String @id
+  tenantId String
+  membershipId String?
+  appId String
+  sessionId String?
+  requestId String
+  source String
+  environment String @default("unknown")
+  batchId String?
+  status String @default("started")
+  usageStatus String @default("pending")
+  model String?
+  requestedModel String?
+  externalId String?
+  inputTokens Int?
+  outputTokens Int?
+  totalTokens Int?
+  cachedInputTokens Int?
+  cacheWriteTokens Int?
+  reasoningTokens Int?
+  purpose String
+  errorCode String?
+  createdAt DateTime @default(now())
+  finishedAt DateTime?
+  @@index([tenantId, appId, createdAt])
+  @@index([model, createdAt])
+}
+
+model KnowledgeSpace {
+  id                String              @id @default(uuid())
+  tenantId          String
+  name              String
+  description       String              @default("")
+  ownerMembershipId String
+  visibility        String              @default("restricted")
+  active            Boolean             @default(true)
+  version           Int                 @default(1)
+  createdAt         DateTime            @default(now())
+  documents         KnowledgeDocument[]
+  grants            KnowledgeGrant[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, active])
+}
+
+model KnowledgeGrant {
+  id          String         @id @default(uuid())
+  tenantId    String
+  spaceId     String
+  space       KnowledgeSpace @relation(fields: [spaceId, tenantId], references: [id, tenantId])
+  subjectType String
+  subjectId   String
+  access      String
+
+  @@unique([spaceId, subjectType, subjectId])
+}
+
+model KnowledgeDocument {
+  id                    String                     @id @default(uuid())
+  tenantId              String
+  spaceId               String
+  space                 KnowledgeSpace             @relation(fields: [spaceId, tenantId], references: [id, tenantId])
+  title                 String
+  currentVersion        Int                        @default(1)
+  status                String                     @default("active")
+  createdByMembershipId String
+  createdAt             DateTime                   @default(now())
+  updatedAt             DateTime                   @updatedAt
+  versions              KnowledgeDocumentVersion[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, spaceId, status])
+}
+
+model KnowledgeDocumentVersion {
+  id                    String              @id @default(uuid())
+  tenantId              String
+  documentId            String
+  document              KnowledgeDocument   @relation(fields: [documentId, tenantId], references: [id, tenantId])
+  version               Int
+  filename              String
+  mimeType              String
+  byteSize              Int
+  sha256                String
+  storageKey            String
+  createdByMembershipId String
+  createdAt             DateTime            @default(now())
+  indexes               KnowledgeIndex[]
+  citations             KnowledgeCitation[]
+
+  @@unique([documentId, version])
+  @@unique([id, tenantId])
+}
+
+model KnowledgeIndex {
+  id                 String                   @id @default(uuid())
+  tenantId           String
+  versionId          String
+  version            KnowledgeDocumentVersion @relation(fields: [versionId, tenantId], references: [id, tenantId])
+  bindingId          String
+  bindingVersion     Int
+  bindingSnapshot    Json
+  provider           String
+  datasetId          String?
+  externalDocumentId String?
+  status             String                   @default("queued")
+  errorCode          String?
+  attempts           Int                      @default(0)
+  startedAt          DateTime?
+  nextAttemptAt      DateTime?
+  updatedAt          DateTime                 @updatedAt
+  nativeDataset      NativeKnowledgeDataset?
+
+  @@unique([id, tenantId])
+  @@unique([versionId, bindingId, bindingVersion])
+  @@index([status, updatedAt])
+}
+
+model KnowledgeEngineProfile {
+  id               String @id @default(uuid())
+  tenantId         String
+  provider         String
+  baseUrl          String
+  secretCiphertext String
+  options          Json
+  version          Int @default(1)
+  updatedAt        DateTime @updatedAt
+  @@unique([tenantId, provider])
+}
+
+model KnowledgeEngineTransition {
+  id                    String @id @default(uuid())
+  tenantId              String
+  bindingId             String
+  baseVersion           Int
+  targetVersion         Int
+  targetSnapshot        Json
+  previousSnapshot      Json
+  profileVersion        Int?
+  createdByMembershipId String
+  status                String @default("building")
+  errorCode             String?
+  createdAt             DateTime @default(now())
+  finishedAt            DateTime?
+  @@index([tenantId, createdAt])
+}
+
+model NativeKnowledgeDataset {
+  id             String @id
+  tenantId       String
+  index          KnowledgeIndex @relation(fields: [id, tenantId], references: [id, tenantId], onDelete: Cascade)
+  status         String @default("uploaded")
+  generation     Int @default(0)
+  dimension      Int?
+  embeddingModel String
+  chunks         NativeKnowledgeChunk[]
+  @@unique([id, tenantId])
+}
+
+model NativeKnowledgeChunk {
+  id          String @id @default(uuid())
+  tenantId    String
+  datasetId   String
+  dataset     NativeKnowledgeDataset @relation(fields: [datasetId, tenantId], references: [id, tenantId], onDelete: Cascade)
+  ordinal     Int
+  text        String
+  locator     Json
+  embedding   Float[] @db.Real
+  @@unique([datasetId, ordinal])
+}
+
+model KnowledgeCitation {
+  id          String                   @id @default(uuid())
+  tenantId    String
+  versionId   String
+  version     KnowledgeDocumentVersion @relation(fields: [versionId, tenantId], references: [id, tenantId])
+  contentHash String
+  excerpt     String
+  locator     Json
+  createdAt   DateTime                 @default(now())
+
+  @@unique([versionId, contentHash])
+  @@index([tenantId, versionId])
+}
+
+model ErpTask {
+  id                    String     @id @default(uuid())
+  requestKey            String
+  tenantId              String
+  title                 String
+  description           String     @default("")
+  createdByMembershipId String
+  assigneeMembershipId  String
+  createdBy             Membership @relation("ErpTaskCreator", fields: [createdByMembershipId, tenantId], references: [id, tenantId])
+  assignee              Membership @relation("ErpTaskAssignee", fields: [assigneeMembershipId, tenantId], references: [id, tenantId])
+  dueAt                 DateTime?
+  status                String     @default("open")
+  version               Int        @default(1)
+  createdAt             DateTime   @default(now())
+  updatedAt             DateTime   @updatedAt
+
+  @@unique([id, tenantId])
+  @@unique([tenantId, createdByMembershipId, requestKey])
+  @@index([tenantId, assigneeMembershipId, status, dueAt])
+  @@index([tenantId, createdByMembershipId])
+}
+
+model ErpNotification {
+  id                    String     @id @default(uuid())
+  tenantId              String
+  recipientMembershipId String
+  recipient             Membership @relation(fields: [recipientMembershipId, tenantId], references: [id, tenantId])
+  dedupeKey             String
+  title                 String
+  body                  String     @default("")
+  readAt                DateTime?
+  createdAt             DateTime   @default(now())
+
+  @@unique([tenantId, recipientMembershipId, dedupeKey])
+  @@index([tenantId, recipientMembershipId, createdAt])
+}
+
+model ErpAnnouncement {
+  id                    String                @id @default(uuid())
+  tenantId              String
+  title                 String
+  body                  String
+  createdByMembershipId String
+  createdBy             Membership            @relation(fields: [createdByMembershipId, tenantId], references: [id, tenantId])
+  active                Boolean               @default(true)
+  createdAt             DateTime              @default(now())
+  reads                 ErpAnnouncementRead[]
+
+  @@unique([id, tenantId])
+  @@index([tenantId, active, createdAt])
+}
+
+model ErpAnnouncementRead {
+  tenantId       String
+  announcementId String
+  membershipId   String
+  announcement   ErpAnnouncement @relation(fields: [announcementId, tenantId], references: [id, tenantId])
+  member         Membership      @relation(fields: [membershipId, tenantId], references: [id, tenantId])
+  readAt         DateTime        @default(now())
+
+  @@id([announcementId, membershipId])
+  @@index([tenantId, membershipId])
+}
+
+model ErpWarehouse {
+  id                String   @id @default(uuid())
+  tenantId          String
+  code              String
+  name              String
+  address           String?
+  ownerMembershipId String?
+  active            Boolean  @default(true)
+  version           Int      @default(1)
+  createdAt         DateTime @default(now())
+
+  @@unique([tenantId, code])
+}
+
+model ErpWarehouseStock {
+  id          String @id @default(uuid())
+  tenantId    String
+  warehouseId String
+  productId   String
+  quantity    Float  @default(0)
+  version     Int    @default(1)
+
+  @@unique([warehouseId, productId])
+  @@index([tenantId, productId])
+}
+
+model ErpTradeReturn {
+  id                     String    @id @default(uuid())
+  tenantId               String
+  number                 String
+  requestKey             String
+  kind                   String
+  sourceId               String
+  status                 String    @default("pending")
+  reason                 String
+  lines                  Json
+  amount                 Decimal   @db.Decimal(18, 2)
+  warehouseId            String
+  createdByMembershipId  String
+  reviewedByMembershipId String?
+  reviewReason           String?
+  version                Int       @default(1)
+  createdAt              DateTime  @default(now())
+  reviewedAt             DateTime?
+
+  @@unique([tenantId, number])
+  @@unique([tenantId, requestKey])
+  @@index([tenantId, kind, sourceId, status])
+}
+
+model ErpOpeningBatch {
+  id         String   @id @default(uuid())
+  tenantId   String
+  requestKey String
+  reference  String
+  openingAt  DateTime
+  lines      Json
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, requestKey])
+  @@unique([tenantId, reference])
+}
+
+model ErpAdvance {
+  id         String   @id @default(uuid())
+  tenantId   String
+  requestKey String
+  kind       String
+  partyId    String
+  reference  String
+  amount     Decimal  @db.Decimal(18, 2)
+  balance    Decimal  @db.Decimal(18, 2)
+  version    Int      @default(1)
+  createdAt  DateTime @default(now())
+
+  @@unique([tenantId, requestKey])
+  @@unique([tenantId, kind, reference])
+}
+
+model ErpQuotation {
+  id                String   @id @default(uuid())
+  tenantId          String
+  number            String
+  customerId        String
+  ownerMembershipId String
+  status            String   @default("draft")
+  version           Int      @default(1)
+  validUntil        DateTime
+  terms             Json
+  lines             Json
+  total             Decimal  @db.Decimal(18, 2)
+  contractId        String?  @unique
+  createdAt         DateTime @default(now())
+
+  @@unique([tenantId, number])
+  @@index([tenantId, ownerMembershipId])
+}
+
+model ErpCustomerPrice {
+  id         String  @id @default(uuid())
+  tenantId   String
+  customerId String
+  productId  String
+  unitPrice  Decimal @db.Decimal(18, 2)
+
+  @@unique([tenantId, customerId, productId])
+}
+
+model ErpBusinessSettings {
+  id             String  @id @default(uuid())
+  tenantId       String  @unique
+  companyAddress String?
+  companyPhone   String?
+  taxNumber      String?
+  approvalConfig Json    @default("{}")
+  workflowConfig Json    @default("{}")
+  version        Int     @default(1)
+}
+
+model ErpWorkflow {
+  id String @id @default(uuid())
+  tenantId String
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  kind String
+  resourceId String
+  parentResourceId String?
+  resourceNumber String
+  title String
+  initiatedByMembershipId String
+  templateVersion Int
+  rules Json
+  steps Json
+  events Json @default("[]")
+  cursor Int @default(0)
+  cycle Int @default(1)
+  status String @default("active")
+  dueAt DateTime?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, kind, resourceId])
+  @@index([tenantId, status, dueAt])
+}
+
+model ErpAccountEntry {
+ id String @id @default(uuid())
+ tenantId String
+ kind String
+ accountId String
+ partyId String
+ amount Decimal @db.Decimal(18, 2)
+ reference String
+ sourceType String
+ sourceId String
+ estimated Boolean @default(false)
+ occurredAt DateTime @default(now())
+ @@index([tenantId, kind, partyId, occurredAt])
+}
+
+model MemberInvitation {
+ id String @id @default(uuid())
+ tenantId String
+ email String
+ name String
+ role String
+ kind String @default("invite")
+ tokenHash String @unique
+ createdByMembershipId String
+ expiresAt DateTime
+ usedAt DateTime?
+ revokedAt DateTime?
+ createdAt DateTime @default(now())
+ @@index([tenantId,email,createdAt])
+}
+
+// Platform orchestration records. Business data remains in each application.
+model BusinessTask {
+  id String @id @default(uuid())
+  tenantId String
+  userId String
+  membershipId String
+  appId String
+  requestKey String
+  fingerprint String
+  title String
+  kind String @default("workflow")
+  input Json
+  status String @default("queued")
+  version Int @default(1)
+  attempts Int @default(0)
+  leaseToken String?
+  leasedUntil DateTime?
+  wakeAt DateTime @default(now())
+  errorCode String?
+  result Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  steps BusinessTaskStep[]
+  @@unique([tenantId, membershipId, requestKey])
+  @@index([status, wakeAt, leasedUntil])
+  @@index([tenantId, membershipId, createdAt])
+}
+model BusinessTaskStep {
+  id String @id @default(uuid())
+  tenantId String
+  taskId String
+  task BusinessTask @relation(fields:[taskId],references:[id],onDelete:Cascade)
+  ordinal Int
+  appId String
+  command String
+  title String
+  input Json
+  status String @default("pending")
+  confirmedAt DateTime?
+  confirmedBy String?
+  attempts Int @default(0)
+  result Json?
+  errorCode String?
+  startedAt DateTime?
+  finishedAt DateTime?
+  @@unique([taskId, ordinal])
+  @@index([tenantId, taskId])
+}
+model ApplicationOutbox {
+  id String @id @default(uuid())
+  tenantId String
+  userId String
+  membershipId String
+  sourceApp String
+  targetApp String
+  command String
+  eventVersion Int @default(1)
+  confirmed Boolean @default(false)
+  requestKey String
+  fingerprint String
+  input Json
+  status String @default("queued")
+  attempts Int @default(0)
+  leaseToken String?
+  leasedUntil DateTime?
+  wakeAt DateTime @default(now())
+  result Json?
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, sourceApp, requestKey])
+  @@index([status, wakeAt, leasedUntil])
+  @@index([tenantId, sourceApp, createdAt])
+}
+model ApplicationCommandReceipt {
+  id String @id @default(uuid())
+  tenantId String
+  appId String
+  command String
+  requestKey String
+  fingerprint String
+  result Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, appId, requestKey])
+}
+model ApplicationObjectLink {
+  id String @id @default(uuid())
+  tenantId String
+  sourceApp String
+  sourceType String
+  sourceId String
+  targetApp String
+  targetType String
+  targetId String
+  createdBy String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, sourceApp, sourceType, sourceId, targetApp, targetType, targetId])
+}
+model ErpOperatingEvent {
+  id String @id @default(uuid())
+  tenantId String
+  kind String
+  sourceId String
+  title String
+  facts Json
+  ownerMembershipId String
+  status String @default("open")
+  version Int @default(1)
+  cycle Int @default(1)
+  detectedAt DateTime @default(now())
+  acknowledgedAt DateTime?
+  escalatedAt DateTime?
+  closedAt DateTime?
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, kind, sourceId])
+  @@index([tenantId, ownerMembershipId, status])
+}
+model ServicePlan {
+  code String @id
+  name String
+  appIds Json
+  seatLimit Int
+  aiRunLimit Int
+  taskLimit Int
+  knowledgeBytes BigInt
+  monthlyPrice Decimal @db.Decimal(18,2)
+  inputTokenPrice Decimal? @db.Decimal(18,6)
+  outputTokenPrice Decimal? @db.Decimal(18,6)
+  active Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model TenantSubscription {
+  tenantId String @id
+  planCode String
+  planVersion Int
+  entitlement Json
+  status String @default("active")
+  expiresAt DateTime
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+model UsageRecord {
+  id String @id @default(uuid())
+  tenantId String
+  appId String
+  membershipId String
+  metric String
+  requestKey String
+  quantity Decimal @db.Decimal(24,6)
+  status String @default("reserved")
+  detail Json?
+  cost Decimal? @db.Decimal(18,6)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, metric, requestKey])
+  @@index([tenantId, metric, createdAt])
+}
+model ManualBill {
+  id String @id @default(uuid())
+  tenantId String
+  number String
+  amount Decimal @db.Decimal(18,2)
+  currency String @default("CNY")
+  status String @default("issued")
+  note String
+  paymentReference String?
+  paidAt DateTime?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@unique([tenantId, number])
+}
+model SupportGrant {
+  id String @id @default(uuid())
+  tenantId String
+  operatorUserId String
+  reason String
+  scopes Json
+  status String @default("requested")
+  approvedBy String?
+  expiresAt DateTime?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, status])
+}
+
+model AiMemoryIndexPurge {
+  id String @id @default(uuid())
+  tenantId String
+  appId String
+  userId String?
+  attempts Int @default(0)
+  nextAttemptAt DateTime @default(now())
+  createdAt DateTime @default(now())
+  @@index([nextAttemptAt])
+}
+
+// Ecommerce CRM owns these tables. Membership, identity and AI execution stay platform owned.
+model CrmSettings {
+  tenantId String @id
+  timezone String @default("Asia/Shanghai")
+  currency String @default("CNY")
+  windowDays Int @default(90)
+  retentionDays Int @default(30)
+  metricPolicyVersion Int @default(1)
+  dataRevision Int @default(0)
+  version Int @default(1)
+  updatedAt DateTime @updatedAt
+}
+model CrmMemberGrant {
+  id String @id @default(uuid())
+  tenantId String
+  membershipId String
+  role String
+  scopeBindings Json
+  active Boolean @default(true)
+  version Int @default(1)
+  reason String
+  grantedBy String
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId,membershipId,role])
+  @@index([tenantId,membershipId,active])
+}
+model CrmMemberPermissionGrant {
+  id String @id @default(uuid())
+  tenantId String
+  membershipId String
+  permission String
+  scopeBindings Json
+  active Boolean @default(true)
+  version Int @default(1)
+  reason String
+  grantedBy String
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId,membershipId,permission])
+}
+model CrmSalesChannel {
+  id String @id @default(uuid())
+  tenantId String
+  code String
+  name String
+  sourceType String @default("manual_import")
+  defaultOrgUnitId String
+  active Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  identities CrmCustomerIdentity[]
+  orders CrmCommerceOrder[]
+  revision CrmScopeRevision?
+  batches CrmImportBatch[]
+  snapshots CrmMetricSnapshot[]
+  @@unique([id,tenantId])
+  @@unique([tenantId,code])
+}
+model CrmScopeRevision {
+  channelId String @id
+  tenantId String
+  channel CrmSalesChannel @relation(fields:[channelId,tenantId],references:[id,tenantId])
+  sourceRevision Int @default(0)
+  customerRuleRevision Int @default(0)
+  publishedSourceRevision Int @default(-1)
+  publishedRuleRevision Int @default(-1)
+  metricGenerationId String?
+  metricAsOf DateTime?
+  metricStatus String @default("queued")
+  updatedAt DateTime @updatedAt
+  @@unique([channelId,tenantId])
+  @@index([tenantId,metricStatus])
+}
+model CrmCustomer {
+  id String @id @default(uuid())
+  tenantId String
+  orgUnitId String
+  displayName String
+  status String @default("active")
+  sourceCreatedAt DateTime?
+  sourceUpdatedAt DateTime?
+  sourceHash String
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  identities CrmCustomerIdentity[]
+  contacts CrmCustomerContact[]
+  orders CrmCommerceOrder[]
+  tags CrmCustomerTagAssignment[]
+  snapshots CrmMetricSnapshot[]
+  segmentMembers CrmSegmentMember[]
+  @@unique([id,tenantId])
+  @@index([tenantId,orgUnitId,status])
+}
+model CrmCustomerIdentity {
+  id String @id @default(uuid())
+  tenantId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId],onDelete:Cascade)
+  channelId String
+  channel CrmSalesChannel @relation(fields:[channelId,tenantId],references:[id,tenantId])
+  externalCustomerId String
+  sourceRevision String?
+  @@unique([tenantId,channelId,externalCustomerId])
+  @@index([tenantId,customerId])
+}
+model CrmCustomerContact {
+  id String @id @default(uuid())
+  tenantId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId],onDelete:Cascade)
+  type String
+  encryptedValue String
+  maskedValue String
+  purpose String
+  @@unique([tenantId,customerId,type])
+}
+model CrmCommerceOrder {
+  id String @id @default(uuid())
+  tenantId String
+  channelId String
+  channel CrmSalesChannel @relation(fields:[channelId,tenantId],references:[id,tenantId])
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId])
+  externalOrderId String
+  status String
+  paidAt DateTime?
+  paidAmount Decimal @db.Decimal(20,2)
+  refundAmount Decimal @db.Decimal(20,2)
+  currency String
+  unallocatedPaidAmount Decimal @default(0) @db.Decimal(20,2)
+  unallocatedRefundAmount Decimal @default(0) @db.Decimal(20,2)
+  unallocatedReason String?
+  sourceUpdatedAt DateTime
+  sourceRevision String?
+  sourceHash String
+  importBatchId String
+  version Int @default(1)
+  compensated Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  items CrmCommerceOrderItem[]
+  @@unique([id,tenantId])
+  @@unique([tenantId,channelId,externalOrderId])
+  @@index([tenantId,customerId,paidAt])
+  @@index([tenantId,channelId,paidAt])
+}
+model CrmCommerceOrderItem {
+  id String @id @default(uuid())
+  tenantId String
+  orderId String
+  order CrmCommerceOrder @relation(fields:[orderId,tenantId],references:[id,tenantId],onDelete:Cascade)
+  lineKey String
+  externalLineId String?
+  externalSkuId String
+  name String?
+  quantity Decimal @db.Decimal(20,6)
+  paidAmount Decimal @db.Decimal(20,2)
+  refundAmount Decimal @db.Decimal(20,2)
+  @@unique([tenantId,orderId,lineKey])
+}
+model CrmCustomerTag {
+  id String @id @default(uuid())
+  tenantId String
+  code String
+  name String
+  status String @default("active")
+  version Int @default(1)
+  assignments CrmCustomerTagAssignment[]
+  @@unique([id,tenantId])
+  @@unique([tenantId,code])
+}
+model CrmCustomerTagAssignment {
+  tenantId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId],onDelete:Cascade)
+  tagId String
+  tag CrmCustomerTag @relation(fields:[tagId,tenantId],references:[id,tenantId])
+  source String @default("manual")
+  @@id([tenantId,customerId,tagId,source])
+}
+model CrmMetricSnapshot {
+  id String @id @default(uuid())
+  tenantId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId],onDelete:Cascade)
+  channelId String
+  channel CrmSalesChannel @relation(fields:[channelId,tenantId],references:[id,tenantId])
+  generationId String
+  currency String
+  windowStart DateTime
+  windowEnd DateTime
+  asOf DateTime
+  policyVersion Int
+  sourceRevision Int
+  values Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId,customerId,channelId,generationId,currency])
+  @@index([tenantId,channelId,generationId])
+}
+model CrmSegment {
+  id String @id @default(uuid())
+  tenantId String
+  name String
+  rule Json
+  ruleHash String
+  templateId String?
+  templateVersion Int?
+  ownerMembershipId String
+  status String @default("active")
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  evaluations CrmSegmentEvaluation[]
+  @@unique([id,tenantId])
+  @@index([tenantId,ownerMembershipId,status])
+}
+model CrmSegmentEvaluation {
+  id String @id @default(uuid())
+  tenantId String
+  segmentId String?
+  segment CrmSegment? @relation(fields:[segmentId,tenantId],references:[id,tenantId])
+  segmentVersion Int?
+  createdByMembershipId String
+  rule Json
+  ruleHash String
+  previewHash String
+  policyVersion Int
+  dataRevision Int
+  dependencyVersions Json
+  scopeFingerprint String
+  metricGenerationId String
+  asOf DateTime
+  expiresAt DateTime
+  memberCount Int
+  memberHash String
+  status String @default("ready")
+  usableForTask Boolean
+  invalidReason String?
+  createdAt DateTime @default(now())
+  members CrmSegmentMember[]
+  tasks CrmOperationTask[]
+  @@unique([id,tenantId])
+  @@index([tenantId,segmentId,createdAt])
+}
+model CrmSegmentMember {
+  tenantId String
+  evaluationId String
+  evaluation CrmSegmentEvaluation @relation(fields:[evaluationId,tenantId],references:[id,tenantId],onDelete:Cascade)
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId])
+  @@id([tenantId,evaluationId,customerId])
+}
+model CrmOperationTask {
+  id String @id @default(uuid())
+  tenantId String
+  title String
+  goal String @default("")
+  creatorMembershipId String
+  ownerMembershipId String?
+  status String @default("draft")
+  dueAt DateTime?
+  version Int @default(1)
+  evaluationId String?
+  evaluation CrmSegmentEvaluation? @relation(fields:[evaluationId,tenantId],references:[id,tenantId])
+  savedRule Json?
+  currentPlanVersion Int @default(1)
+  confirmedPlanVersion Int?
+  submittedPlanVersion Int?
+  confirmedBy String?
+  confirmedAt DateTime?
+  baselineStart DateTime?
+  baselineEnd DateTime?
+  observationStart DateTime?
+  observationEnd DateTime?
+  currency String @default("CNY")
+  policyVersion Int @default(1)
+  timezone String @default("Asia/Shanghai")
+  relatedTaskId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  plans CrmTaskPlanVersion[]
+  logs CrmOperationTaskLog[]
+  @@unique([id,tenantId])
+  @@index([tenantId,ownerMembershipId,status,dueAt])
+}
+model CrmTaskPlanVersion {
+  id String @id @default(uuid())
+  tenantId String
+  taskId String
+  task CrmOperationTask @relation(fields:[taskId,tenantId],references:[id,tenantId])
+  planVersion Int
+  planText String
+  checklist Json
+  hypotheses Json
+  origin String @default("manual")
+  aiInvocationId String?
+  skillVersion String?
+  factReferences Json
+  createdBy String
+  createdAt DateTime @default(now())
+  @@unique([tenantId,taskId,planVersion])
+}
+model CrmOperationTaskLog {
+  id String @id @default(uuid())
+  tenantId String
+  taskId String
+  task CrmOperationTask @relation(fields:[taskId,tenantId],references:[id,tenantId])
+  actorMembershipId String
+  type String
+  action String
+  occurredAt DateTime
+  summary String
+  checklistItemIds Json
+  correctsLogId String?
+  createdAt DateTime @default(now())
+  @@index([tenantId,taskId,occurredAt])
+}
+model CrmImportBatch {
+  id String @id @default(uuid())
+  tenantId String
+  channelId String
+  channel CrmSalesChannel @relation(fields:[channelId,tenantId],references:[id,tenantId])
+  kind String
+  creatorMembershipId String
+  status String @default("draft")
+  mapping Json
+  mappingVersion Int @default(1)
+  version Int @default(1)
+  rowCounts Json @default("{}")
+  objectCounts Json @default("{}")
+  scopePairs Json
+  fileSetHash String?
+  previewHash String?
+  previewContext Json?
+  metricsStatus String @default("queued")
+  attempts Int @default(0)
+  leaseAt DateTime?
+  cancelledAt DateTime?
+  startedAt DateTime?
+  completedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  files CrmImportFile[]
+  rows CrmImportRow[]
+  changes CrmImportChange[]
+  @@unique([id,tenantId])
+  @@index([tenantId,status,createdAt])
+}
+model CrmImportFile {
+  id String @id @default(uuid())
+  tenantId String
+  batchId String
+  batch CrmImportBatch @relation(fields:[batchId,tenantId],references:[id,tenantId])
+  role String
+  filename String
+  format String
+  sheetName String
+  fileRef String?
+  fileHash String
+  size Int
+  rowCount Int
+  version Int @default(1)
+  expiresAt DateTime
+  rows CrmImportRow[]
+  @@unique([id,tenantId])
+  @@unique([tenantId,batchId,role])
+}
+model CrmImportRow {
+  id String @id @default(uuid())
+  tenantId String
+  batchId String
+  batch CrmImportBatch @relation(fields:[batchId,tenantId],references:[id,tenantId])
+  fileId String
+  file CrmImportFile @relation(fields:[fileId,tenantId],references:[id,tenantId])
+  sheetName String
+  rowNumber Int
+  groupKey String
+  payloadCiphertext String?
+  rowHash String
+  status String @default("pending")
+  targetId String?
+  outcome String?
+  errorCode String?
+  errorFields Json @default("[]")
+  attempts Int @default(0)
+  @@unique([tenantId,batchId,fileId,sheetName,rowNumber])
+  @@index([tenantId,batchId,groupKey,status])
+}
+model CrmImportChange {
+  id String @id @default(uuid())
+  tenantId String
+  batchId String
+  batch CrmImportBatch @relation(fields:[batchId,tenantId],references:[id,tenantId])
+  targetType String
+  targetId String
+  beforeCiphertext String?
+  afterVersion Int
+  compensatedAt DateTime?
+  createdAt DateTime @default(now())
+  @@unique([tenantId,batchId,targetType,targetId])
+}
+model CrmCommandReceipt {
+  id String @id @default(uuid())
+  tenantId String
+  membershipId String
+  command String
+  requestKey String
+  fingerprint String
+  result Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId,membershipId,command,requestKey])
+}
+model AiComposerDraft {
+  id String @id @default(uuid())
+  tenantId String
+  userId String
+  appId String
+  version Int @default(1)
+  contentCiphertext String
+  expiresAt DateTime
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId,userId,appId])
+}
+
+// MES owns its catalog and immutable production snapshots; no ERP table coupling.
+model MesMemberGrant {
+  id String @id @default(uuid())
+  tenantId String
+  membershipId String
+  role String
+  version Int @default(1)
+  @@unique([tenantId, membershipId])
+}
+model MesMaterial {
+  id String @id @default(uuid())
+  tenantId String
+  sku String
+  name String
+  kind String
+  unit String
+  active Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@unique([tenantId, sku])
+  @@unique([id, tenantId])
+}
+model MesBom {
+  id String @id @default(uuid())
+  tenantId String
+  productId String
+  productSku String
+  productName String
+  revision Int
+  status String @default("draft")
+  lines Json
+  note String @default("")
+  version Int @default(1)
+  createdBy String
+  createdAt DateTime @default(now())
+  publishedAt DateTime?
+  @@unique([tenantId, productId, revision])
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+}
+model MesBomReview {
+  id String @id @default(uuid())
+  tenantId String
+  bomId String
+  bomVersion Int
+  findings Json
+  decisions Json
+  createdBy String
+  createdAt DateTime @default(now())
+  version Int @default(1)
+  @@index([tenantId, bomId, createdAt])
+}
+model MesPlan {
+  id String @id @default(uuid())
+  tenantId String
+  code String
+  productId String
+  productSku String
+  productName String
+  bomId String
+  bomRevision Int
+  targetQty Int
+  dueAt DateTime
+  note String @default("")
+  requirements Json
+  bomVersions Json
+  status String @default("draft")
+  version Int @default(1)
+  createdBy String
+  createdAt DateTime @default(now())
+  @@unique([tenantId, code])
+  @@unique([id, tenantId])
+  @@index([tenantId, status])
+}
+model MesWorkOrder {
+  id String @id @default(uuid())
+  tenantId String
+  planId String
+  code String
+  operation String
+  targetQty Int
+  assigneeId String
+  status String @default("ready")
+  goodQty Int @default(0)
+  defectQty Int @default(0)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@unique([tenantId, code])
+  @@unique([id, tenantId])
+  @@index([tenantId, assigneeId, status])
+  @@index([tenantId, planId])
+}
+model MesReport {
+  id String @id @default(uuid())
+  tenantId String
+  orderId String
+  reporterId String
+  goodQty Int
+  defectQty Int
+  note String @default("")
+  status String @default("pending")
+  reviewerId String?
+  reason String @default("")
+  reviewedAt DateTime?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@unique([id, tenantId])
+  @@index([tenantId, orderId, status])
+}
+model MesCommandReceipt {
+  id String @id @default(uuid())
+  tenantId String
+  membershipId String
+  command String
+  requestKey String
+  fingerprint String
+  result Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, membershipId, command, requestKey])
 }

@@ -1,0 +1,7 @@
+FROM ghcr.io/openclaw/openclaw:2026.9.7@sha256:0da12cd49983fcb5e4915fd3135ce7a33d82f93649b1df6964946d2c1d1dbcfc
+USER root
+RUN mkdir -p /var/lib/suite-memory && chown 1000:1000 /var/lib/suite-memory
+COPY infrastructure/memory-core-server.mjs /app/suite-memory-core-server.mjs
+USER 1000:1000
+ENV MEMORY_CORE_DATA_DIR=/var/lib/suite-memory OPENCLAW_ROOT=/app NODE_OPTIONS=--max-old-space-size=96
+CMD ["node", "/app/suite-memory-core-server.mjs"]

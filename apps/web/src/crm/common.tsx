@@ -1,0 +1,17 @@
+import {createContext,useContext,useEffect,useRef} from 'react';import {Link,useBlocker} from 'react-router-dom';import {api,tenantApi} from '../api';import {Notice,Loading,Empty,ConfirmDialog} from '../components';import type {ReactNode} from 'react';
+export const CrmContext=createContext<any>(null);export const useCrm=()=>useContext(CrmContext);
+export const requestKey=()=>crypto.randomUUID();export const base=(key:string)=>tenantApi(key,'/apps/crm');
+export const defaultRule=()=>({match:'all',currency:'CNY',conditions:[{field:'status',op:'eq',value:'active'}]});
+export const labels:Record<string,string>={draft:'草稿',uploaded:'已上传',validation_failed:'校验未通过',awaiting_confirmation:'待确认导入',queued:'排队中',applying:'导入中',partially_applied:'部分成功',failed:'失败',completed:'已完成',cancelled:'已取消',pending_confirmation:'待负责人确认',ready:'待执行',in_progress:'进行中',created:'新增',updated:'更新',unchanged:'未变化',stale:'过时跳过',conflict:'版本冲突',pending:'待处理',manager:'CRM负责人',operator:'运营',analyst:'分析',viewer:'只读',active:'正常',archived:'已归档',customer:'客户',order:'订单',item:'订单明细',paid:'已支付',refunded:'全额退款',closed:'已关闭'};
+export const date=(v:any)=>v?new Date(v).toLocaleString('zh-CN',{hour12:false}):'—';
+export function Result({data,loading,error,children}:{data:any;loading:boolean;error:any;children:ReactNode}){return <><Notice text={error}/>{loading&&!data?<Loading/>:data?children:<Empty text="暂无数据"/>}</>;}
+export function Meta({value}:{value:any}){return value&&<p className="muted" title={'更新于 '+date(value.asOf)}>{new Date(value.windowStart).toLocaleDateString('zh-CN')} — {new Date(value.windowEnd).toLocaleDateString('zh-CN')} · {value.currency}{value.metricsStatus!=='ready'&&' · 指标更新中'}</p>;}
+export function Cards({items}:{items:Array<[string,any]>}){return <div className="metric-grid">{items.map(([name,v])=><div className="metric" key={name}><span>{name}</span><strong>{v??'—'}</strong></div>)}</div>;}
+export function Table({headers,children}:{headers:string[];children:ReactNode}){return <div className="table-wrap"><table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table></div>;}
+export function Permission({name,children}:{name:string;children:ReactNode}){return useCrm().can(name)?children:null;}
+export function BlobDownload(filename:string,content:string|Uint8Array,type='text/csv;charset=utf-8'){const url=URL.createObjectURL(new Blob([content as BlobPart],{type})),a=document.createElement('a');a.href=url;a.download=filename;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}
+export function CustomerLink({id,name,currency}:{id:string;name:string;currency?:string}){const {prefix,meta}=useCrm();return <Link to={prefix+'/customers/'+id+'?currency='+(currency??meta.settings.currency)}>{name}</Link>;}
+export {api};
+
+// One route blocker per CRM editor; explicit saves may allow their own navigation.
+export function useCrmLeaveGuard(dirty:boolean){const allow=useRef(false);const block=useBlocker(({currentLocation,nextLocation})=>!allow.current&&dirty&&(currentLocation.pathname!==nextLocation.pathname||currentLocation.search!==nextLocation.search));useEffect(()=>{if(!dirty)allow.current=false;},[dirty]);return {allow:()=>{allow.current=true;},dialog:<ConfirmDialog open={block.state==='blocked'} title="放弃尚未保存的修改？" description="离开后只保留服务器上已保存的版本。" confirmLabel="放弃修改并离开" cancelLabel="继续编辑" confirmPrimary={false} onCancel={()=>block.state==='blocked'&&block.reset()} onConfirm={()=>block.state==='blocked'&&block.proceed()}/>};}

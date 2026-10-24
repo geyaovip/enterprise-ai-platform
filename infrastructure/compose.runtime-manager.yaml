@@ -1,0 +1,12 @@
+# The API/Worker can call the private allowlisted controller, never Docker itself.
+services:
+  api:
+    environment:
+      RUNTIME_MANAGER_SOCKET: /run/suite-runtime/control.sock
+    volumes:
+      - /run/suite-runtime:/run/suite-runtime:ro
+  worker:
+    environment:
+      RUNTIME_MANAGER_SOCKET: /run/suite-runtime/control.sock
+    volumes:
+      - /run/suite-runtime:/run/suite-runtime:ro

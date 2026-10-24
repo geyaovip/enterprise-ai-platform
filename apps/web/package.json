@@ -13,7 +13,8 @@
     "qrcode.react": "4.2.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "react-router-dom": "7.18.4"
+    "react-router-dom": "7.18.4",
+    "@suite/frontend": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

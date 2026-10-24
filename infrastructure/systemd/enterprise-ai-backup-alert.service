@@ -1,0 +1,5 @@
+[Unit]
+Description=Record Enterprise AI backup failure
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/logger -p user.err -t enterprise-ai-backup Backup failed. Check enterprise-ai-backup.service and operator backup status.

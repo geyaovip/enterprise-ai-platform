@@ -4,11 +4,22 @@ RUN corepack enable && corepack prepare pnpm@11.19.0 --activate
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
 COPY apps/api/package.json apps/api/package.json
 COPY apps/web/package.json apps/web/package.json
+COPY apps/admin/package.json apps/admin/package.json
+COPY apps/platform-admin/package.json apps/platform-admin/package.json
+COPY packages/frontend/package.json packages/frontend/package.json
 RUN pnpm install --frozen-lockfile
+COPY packages/frontend packages/frontend
 COPY apps/web apps/web
-RUN pnpm --filter @suite/web build
+COPY apps/admin apps/admin
+COPY apps/platform-admin apps/platform-admin
+ARG FRONTEND=web
+ARG SUITE_PUBLIC_BASE=/
+ARG VITE_TENANT_ADMIN_URL=/tenant-admin
+ARG VITE_WORKSPACE_URL=
+ENV SUITE_PUBLIC_BASE=${SUITE_PUBLIC_BASE} VITE_TENANT_ADMIN_URL=${VITE_TENANT_ADMIN_URL} VITE_WORKSPACE_URL=${VITE_WORKSPACE_URL}
+RUN pnpm --filter @suite/${FRONTEND} build && cp -R apps/${FRONTEND}/dist /frontend-dist
 
 FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
-COPY --from=build /app/apps/web/dist /srv
+COPY --from=build /frontend-dist /srv
 COPY infrastructure/Caddyfile /etc/caddy/Caddyfile
 EXPOSE 80 443

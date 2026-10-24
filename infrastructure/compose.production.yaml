@@ -30,6 +30,10 @@ services:
   api:
     image: enterprise-ai-platform/api:${RELEASE_TAG:?Set RELEASE_TAG}
     env_file: ../.env.production
+    environment:
+      KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+    volumes:
+      - knowledge_originals:/var/lib/suite/knowledge
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -43,6 +47,10 @@ services:
   worker:
     image: enterprise-ai-platform/api:${RELEASE_TAG:?Set RELEASE_TAG}
     env_file: ../.env.production
+    environment:
+      KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+    volumes:
+      - knowledge_originals:/var/lib/suite/knowledge
     command: ["node", "apps/api/dist/worker.js"]
     depends_on:
       migrate:
@@ -72,7 +80,38 @@ services:
         condition: service_healthy
     restart: unless-stopped
 
+  admin:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.web
+      args:
+        FRONTEND: admin
+        SUITE_PUBLIC_BASE: /tenant-admin/
+    image: enterprise-ai-platform/admin:${RELEASE_TAG:?Set RELEASE_TAG}
+    environment:
+      SITE_ADDRESS: ":80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
+  platform-admin:
+    build:
+      context: ..
+      dockerfile: infrastructure/Dockerfile.web
+      args:
+        FRONTEND: platform-admin
+        SUITE_PUBLIC_BASE: /platform-admin/
+    image: enterprise-ai-platform/platform-admin:${RELEASE_TAG:?Set RELEASE_TAG}
+    environment:
+      SITE_ADDRESS: ":80"
+    depends_on:
+      api:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
+  knowledge_originals:
   postgres_data:
   caddy_data:
   caddy_config:

@@ -1,0 +1,16 @@
+const assert = require('node:assert/strict');
+const { chooseThinkingMode } = require('../dist/modules/ai/thinking-mode');
+const input = (content, values = {}) => ({ content, allowAction: false, useKnowledge: false, thinkingMode: 'auto', ...values });
+assert.equal(chooseThinkingMode(input('你好'), false), 'fast');
+assert.equal(chooseThinkingMode(input('你好',{allowAction:true,useKnowledge:true}),false),'fast');
+assert.equal(chooseThinkingMode(input('你好',{allowAction:true,useKnowledge:true}),true),'deep');
+assert.equal(chooseThinkingMode(input('那位客户最近买了什么',{allowAction:true}),false),'deep');
+assert.equal(chooseThinkingMode(input('你好，请导出客户手机号',{allowAction:true}),false),'deep');
+assert.equal(chooseThinkingMode(input('这个术语是什么意思？'), false), 'fast');
+assert.equal(chooseThinkingMode(input('请深入分析采购风险'), false), 'deep');
+assert.equal(chooseThinkingMode(input('你好', { thinkingMode: 'deep' }), false), 'deep');
+assert.equal(chooseThinkingMode(input('请分析一下', { thinkingMode: 'fast' }), false), 'fast');
+assert.equal(chooseThinkingMode(input('你好', { allowAction: true, thinkingMode: 'fast' }), false), 'deep');
+assert.equal(chooseThinkingMode(input('你好', { useKnowledge: true, thinkingMode: 'fast' }), false), 'deep');
+assert.equal(chooseThinkingMode(input('你好', { thinkingMode: 'fast' }), true), 'deep');
+process.stdout.write('Automatic and manual thinking selection, including protected business paths, passed.\n');

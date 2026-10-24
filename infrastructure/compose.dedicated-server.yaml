@@ -1,0 +1,24 @@
+# Dedicated server behind the project's own Cloudflare Tunnel.
+# Apply production + native-knowledge + native-release + this file.
+services:
+  migrate:
+    working_dir: /app/apps/api
+    command: ["node", "node_modules/prisma/build/index.js", "migrate", "deploy"]
+  postgres:
+    mem_limit: 512m
+  api:
+    mem_limit: 768m
+    ports:
+      - "127.0.0.1:4600:4600"
+  worker:
+    mem_limit: 512m
+  web:
+    profiles: [standalone-web]
+  admin:
+    profiles: [standalone-web]
+  platform-admin:
+    profiles: [standalone-web]
+volumes:
+  knowledge_originals:
+    external: true
+    name: enterprise-ai-platform_knowledge_originals

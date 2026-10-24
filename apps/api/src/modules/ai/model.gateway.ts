@@ -1,11 +1,13 @@
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
-import { createCipheriv, createDecipheriv, randomBytes } from 'node:crypto';
+import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
+import { responseReceipt, usageColumns, type RuntimeReceipt } from './runtime-usage';
 import { isIP } from 'node:net';
 import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
 import type { RequestContext } from '../platform/context';
 import { readBody } from '../platform/security';
+import { assertInputBudget } from './input-budget';
 
 const settingsInput = z.object({ model: z.string().trim().min(1).max(120), baseUrl: z.url(), apiKey: z.string().min(8).max(1000) });
 const providerResponse = z.object({ choices: z.array(z.object({ message: z.object({ content: z.string().nullable() }) })).min(1), usage: z.object({ prompt_tokens: z.number().optional(), completion_tokens: z.number().optional() }).optional() });
@@ -53,10 +55,19 @@ export class ModelGateway {
     return settings ? { configured: true, model: settings.model, baseUrl: settings.baseUrl, updatedAt: settings.updatedAt } : { configured: false };
   }
 
+  // Internal lifecycle integration only; never returned by an HTTP controller.
+  async runtimeSettings(tenantId: string) {
+    const settings = await this.db.aiProviderSettings.findUnique({ where: { tenantId } });
+    if (!settings) return null;
+    this.endpoint(settings.baseUrl);
+    return { model: settings.model, baseUrl: settings.baseUrl, apiKey: this.decrypt(settings.keyCiphertext) };
+  }
+
   async save(ctx: RequestContext, body: unknown) {
     this.auth.require(ctx, 'platform.manage');
     const input = readBody(settingsInput, body);
     this.endpoint(input.baseUrl);
+    if(await this.db.aiExecution.count({where:{tenantId:ctx.tenantId,status:{in:['queued','preparing','running']}}}))throw new BadRequestException('仍有 AI 请求正在处理，请结束后调整模型');
     return this.db.$transaction(async tx => {
       await tx.aiProviderSettings.upsert({ where: { tenantId: ctx.tenantId }, create: { tenantId: ctx.tenantId, model: input.model, baseUrl: input.baseUrl, keyCiphertext: this.encrypt(input.apiKey), updatedBy: ctx.userId }, update: { model: input.model, baseUrl: input.baseUrl, keyCiphertext: this.encrypt(input.apiKey), updatedBy: ctx.userId } });
       await tx.auditEvent.create({ data: { tenantId: ctx.tenantId, userId: ctx.userId, membershipId: ctx.membershipId, appId: 'platform', requestId: ctx.requestId, action: 'platform.ai.settings.update', resourceType: 'AiProviderSettings', resourceId: ctx.tenantId } });
@@ -73,17 +84,27 @@ export class ModelGateway {
     });
   }
 
-  async complete(ctx: RequestContext, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>) {
+  async complete(ctx: RequestContext, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, onUsage?:(receipt:RuntimeReceipt)=>Promise<void>) {
+    assertInputBudget(messages);
     const settings = await this.db.aiProviderSettings.findUnique({ where: { tenantId: ctx.tenantId } });
     if (!settings) throw new ServiceUnavailableException('当前企业尚未配置 AI 模型');
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30_000);
     let status = 'failed';
     let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
+    let receipt:RuntimeReceipt|undefined;
+    const ledgerId=onUsage?null:randomUUID();
+    const ark= new URL(settings.baseUrl).hostname==='ark.cn-beijing.volces.com'&&/^(?:doubao-seed-evolving|doubao-seed-2-1-(?:lite|pro)-)/.test(settings.model);
     try {
-      const response = await fetch(this.endpoint(settings.baseUrl), { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.decrypt(settings.keyCiphertext)}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: settings.model, messages, temperature: 0.2 }), signal: controller.signal });
+      if(ledgerId)await this.db.aiModelUsage.create({data:{id:ledgerId,tenantId:ctx.tenantId,membershipId:ctx.membershipId,appId:ctx.app.appId,requestId:ctx.requestId,source:'direct',environment:process.env.NODE_ENV??'development',batchId:process.env.AI_USAGE_BATCH_ID,purpose:'reply',requestedModel:settings.model}});
+      const response = await fetch(this.endpoint(settings.baseUrl), { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.decrypt(settings.keyCiphertext)}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: settings.model, messages, temperature: 0.2,max_tokens:2048,...(ark?{thinking:{type:'disabled'}}:{}) }), signal: controller.signal });
       if (!response.ok) throw new ServiceUnavailableException(`模型服务返回 ${response.status}`);
-      const parsed = providerResponse.safeParse(await response.json());
+      const raw:any=await response.json();
+      receipt=responseReceipt({id:raw.id,model:raw.model,usage:{input_tokens:raw.usage?.prompt_tokens,output_tokens:raw.usage?.completion_tokens,total_tokens:raw.usage?.total_tokens,input_tokens_details:raw.usage?.prompt_tokens_details,output_tokens_details:raw.usage?.completion_tokens_details}},settings.model);
+      usage={prompt_tokens:receipt.usage?.inputTokens,completion_tokens:receipt.usage?.outputTokens};
+      if(onUsage)await onUsage(receipt);
+      if(ledgerId)await this.db.aiModelUsage.update({where:{id:ledgerId},data:usageColumns(receipt)});
+      const parsed = providerResponse.safeParse(raw);
       if (!parsed.success || !parsed.data.choices[0].message.content) throw new ServiceUnavailableException('模型返回结构无效');
       usage = parsed.data.usage;
       status = 'completed';
@@ -94,6 +115,7 @@ export class ModelGateway {
     } finally {
       clearTimeout(timeout);
       await this.db.aiUsage.create({ data: { tenantId: ctx.tenantId, userId: ctx.userId, appId: ctx.app.appId, model: settings.model, inputTokens: usage?.prompt_tokens, outputTokens: usage?.completion_tokens, status } });
+      if(ledgerId)await this.db.aiModelUsage.update({where:{id:ledgerId},data:{status,finishedAt:new Date(),...usageColumns(receipt)}});
     }
   }
 

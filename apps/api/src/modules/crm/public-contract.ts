@@ -1,0 +1,5 @@
+import {randomUUID} from 'node:crypto';import {z} from 'zod';import {CommandRegistry} from '../orchestration/command-registry';import {CrmTaskService,taskDraftSchema} from './operation-task.service';import {CrmSegmentService} from './segment.service';import {CrmCustomerService} from './customer.service';import {CrmMetricsService} from './metrics.service';import {problem,json} from './crm.common';
+export function registerCrmContract(registry:CommandRegistry,tasks:CrmTaskService,segments:CrmSegmentService,customers:CrmCustomerService,metrics:CrmMetricsService){
+ registry.register({appId:'crm',id:'crm.task.create_draft',permission:'crm.task.write',title:'创建CRM运营草稿',confirmation:true,input:taskDraftSchema,execute:async(tx,ctx,i)=>({state:'completed',result:json(await tasks.save(ctx,undefined,{...i,requestKey:randomUUID()},undefined,tx))})});
+ registry.registerReader('crm',async(ctx,type,id)=>{if(type==='customer')return customers.detail(ctx,id);if(type==='segment')return segments.get(ctx,id);if(type==='operation_task')return tasks.get(ctx,id);if(type==='metrics')return metrics.overview(ctx,undefined);problem('NOT_FOUND','CRM公开对象类型不支持',404);});
+}

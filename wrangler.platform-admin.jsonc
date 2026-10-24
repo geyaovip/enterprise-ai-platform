@@ -1,0 +1,10 @@
+{
+  "name": "enterprise-ai-platform-platform-admin",
+  "account_id": "be17a247378b4f5d64bc2eb9075eaa0f",
+  "main": "cloudflare/frontend-worker.js",
+  "compatibility_date": "2026-09-30",
+  "workers_dev": false,
+  "preview_urls": false,
+  "vars": { "FRONTEND_PREFIX": "/platform-admin" },
+  "assets": { "directory": "./apps/platform-admin/dist", "binding": "ASSETS", "not_found_handling": "none", "run_worker_first": true }
+}

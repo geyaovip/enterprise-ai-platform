@@ -1,3 +1,4 @@
+import { currentActors, type FlowStep } from '../erp/workflow.rules';
 import * as lark from '@larksuiteoapi/node-sdk';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from './auth.service';
@@ -107,6 +108,7 @@ export class ChannelRuntime {
   async processDelivery() {
     const item = await this.db.channelDelivery.findFirst({ where: { OR: [{ status: { in: ['queued', 'retry', 'awaiting_identity'] }, nextAttemptAt: { lte: new Date() } }, { status: 'sending', updatedAt: { lt: new Date(Date.now() - 120_000) } }] }, orderBy: { createdAt: 'asc' } });
     if (!item) return false;
+    if(item.eventKey.startsWith('workflow:')){const [,id,cycle,cursor,,event]=item.eventKey.split(':');if(['entered','manual','lead'].includes(event)||event.startsWith('overdue-')||event.startsWith('escalated-')){const flow=await this.db.erpWorkflow.findFirst({where:{id,tenantId:item.tenantId}});const actors=flow?currentActors((flow.steps as FlowStep[])[flow.cursor]):[];const escalation=flow?(flow.rules as {escalation:string[]}).escalation:[];if(!flow||flow.status!=='active'||flow.cycle!==Number(cycle)||flow.cursor!==Number(cursor)||!(event.startsWith('escalated-')?(escalation.length?escalation:(await this.db.membership.findMany({where:{tenantId:item.tenantId,role:'admin',active:true},select:{id:true}})).map(m=>m.id)):actors).includes(item.membershipId)){await this.db.channelDelivery.updateMany({where:{id:item.id,status:item.status,updatedAt:item.updatedAt},data:{status:'cancelled',errorCode:'WORKFLOW_MOVED'}});return true;}}}
     const channel = this.connected.get(item.connectionId);
     if (!channel) return false;
     const member = await this.db.membership.findFirst({ where: { id: item.membershipId, tenantId: item.tenantId, active: true, user: { active: true }, tenant: { active: true } } });

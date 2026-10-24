@@ -4,6 +4,10 @@
 .git
 .env
 .env.*
+**/.env
+**/.env.*
+var
+**/var
 !.env.example
 .playwright-cli
 output

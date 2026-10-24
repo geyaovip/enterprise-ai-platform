@@ -1,0 +1,68 @@
+/* Shared application identity and launcher. Business menus remain inside each app. */
+.application-launcher { flex:none; min-width:0; margin:0 4px 12px; }
+.application-trigger { display:flex; align-items:center; gap:9px; width:100%; min-height:62px; padding:10px; color:var(--text); background:var(--surface,#fff); border:1px solid var(--border); border-radius:12px; text-align:left; box-shadow:none; }
+.application-trigger:hover,.application-trigger[aria-expanded=true] { background:var(--brand-soft); border-color:var(--brand); }
+.application-trigger>svg { flex:none; color:var(--hint); }
+.application-icon { width:36px; height:36px; flex:none; display:inline-flex; align-items:center; justify-content:center; background:var(--brand-soft); color:var(--brand); border:1px solid var(--border); border-radius:11px; }
+.application-icon svg { width:20px; height:20px; }
+.application-icon-crm { background:var(--brand); color:white; border-color:var(--brand); }
+.application-trigger-copy,.application-choice-copy { display:flex; flex-direction:column; gap:3px; flex:1; min-width:0; }
+.application-trigger-copy strong { font-size:14px; font-weight:600; white-space:nowrap; }
+.application-trigger-copy small { font-size:11px; color:var(--hint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.application-picker { position:fixed; inset:76px auto auto 16px; margin:0; padding:0; width:400px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 96px); color:var(--text); background:white; border:1px solid var(--border); border-radius:20px; box-shadow:0 16px 60px #20253526; overflow:hidden; }
+.application-picker[open] { display:flex; flex-direction:column; }
+.application-picker::backdrop { background:#20253524; }
+.application-picker-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:22px 20px 16px; flex:none; }
+.application-picker-heading h2 { font-size:18px; line-height:26px; margin:0; }
+.application-picker-heading p { margin:4px 0 0; font-size:12px; color:var(--hint); }
+.application-picker-heading button { display:grid; place-items:center; flex:none; width:40px; height:40px; min-height:40px; padding:0; border:0; background:transparent; color:var(--muted); border-radius:8px; }
+.application-search { display:flex; align-items:center; gap:8px; margin:0 20px 8px; padding:0 12px; background:var(--canvas); border:1px solid var(--border); border-radius:10px; color:var(--hint); flex:none; }
+.application-search:focus-within { border-color:var(--brand); outline:2px solid var(--brand-soft); }
+.application-picker .application-search input:not([type=checkbox]):not([type=radio]) { min-width:0; width:100%; height:42px; padding:0; border:0; box-shadow:none; outline:0; background:transparent; font-size:14px; }
+.application-picker-body { overflow:auto; overscroll-behavior:contain; padding:0 12px 16px; min-height:0; }
+.application-picker-body section { margin:16px 0 0; }
+.application-picker-body h3 { margin:0 8px 10px; color:var(--hint); font-size:12px; font-weight:400; }
+.application-recents { display:flex; gap:8px; padding:0 4px 10px; border-bottom:1px solid var(--border); }
+.application-recents a { display:flex; flex:0 1 112px; min-width:0; flex-direction:column; align-items:center; gap:7px; padding:12px 4px; border-radius:12px; color:var(--text); text-align:center; text-decoration:none; }
+.application-recents a:hover { background:var(--brand-soft); }
+.application-recents .application-icon { width:44px; height:44px; border-radius:14px; }
+.application-recents strong { font-size:12px; font-weight:500; }
+.application-recents small { color:var(--brand); font-size:11px; }
+.application-choice { display:flex; align-items:center; gap:12px; padding:14px 10px; min-height:76px; color:var(--text); border:1px solid transparent; border-radius:12px; text-decoration:none; }
+.application-choice:hover,.application-choice.is-current { background:var(--brand-soft); }
+.application-choice-copy strong { font-size:15px; font-weight:500; }
+.application-choice-copy small { font-size:12px; color:var(--muted); line-height:18px; }
+.application-current,.application-enter { display:inline-flex; align-items:center; gap:4px; flex:none; font-size:12px; color:var(--brand); }
+.application-enter { color:var(--muted); }
+.application-picker-footer { flex:none; padding:12px 20px; border-top:1px solid var(--border); color:var(--hint); font-size:11px; background:var(--canvas); }
+.application-no-results { color:var(--hint); padding:24px 8px; font-size:13px; text-align:center; }
+.suite-topbar-application { display:none; }
+.sidebar .workspace-tenant { border:0; margin:0 4px 12px; padding:0 10px 12px; border-bottom:1px solid var(--border); border-radius:0; color:var(--hint); font-size:12px; font-weight:400; }
+@media (max-width:959px) {
+  .suite-topbar-application { display:block; flex:none; }
+  .application-launcher.is-compact { margin:0; }
+  .is-compact .application-trigger { min-height:40px; padding:4px 7px; gap:5px; border-radius:20px; }
+  .is-compact .application-trigger .application-icon { width:24px; height:24px; border-radius:8px; }
+  .is-compact .application-trigger .application-icon svg { width:15px; height:15px; }
+  .is-compact .application-trigger-copy strong { font-size:12px; }
+  .is-compact .application-trigger>svg { width:12px; }
+}
+@media (max-width:767px) {
+  .suite-topbar:has(.suite-topbar-application) { grid-template-columns:44px auto minmax(0,1fr) 44px; gap:4px; }
+  .suite-topbar:has(.suite-topbar-application) .suite-topbar-title { grid-column:3; }
+  .suite-topbar:has(.suite-topbar-application) .ask-ai-trigger { grid-column:4; }
+  .is-compact .application-trigger { min-height:44px; }
+  .is-compact .application-trigger .application-icon { display:none; }
+  .application-picker { inset:calc(64px + env(safe-area-inset-top)) 12px auto; width:auto; max-width:none; max-height:calc(100dvh - 88px - env(safe-area-inset-top)); border-radius:18px; }
+  .application-picker-heading { padding:16px; }
+  .application-picker-heading button { min-width:44px; min-height:44px; }
+  .application-search { margin-left:16px; margin-right:16px; }
+  .application-picker .application-search input:not([type=checkbox]):not([type=radio]) { height:44px; min-height:44px; font-size:16px; }
+}
+@media print { .application-picker { display:none!important; } }
+
+/* Product logos share one palette and their own silhouettes. */
+.application-icon{background:var(--brand-soft);border:0;border-radius:10px}
+.application-icon svg.brand-logo{width:28px;height:28px}
+.application-icon-crm{background:var(--brand-soft);color:var(--brand);border:0}
+.application-recents .application-icon svg.brand-logo{width:32px;height:32px}

@@ -1,10 +1,20 @@
 {$SITE_ADDRESS} {
   encode zstd gzip
+  redir /tenant-admin /tenant-admin/ 308
+  redir /platform-admin /platform-admin/ 308
+  handle_path /tenant-admin/* {
+    reverse_proxy admin:80
+  }
+  handle_path /platform-admin/* {
+    reverse_proxy platform-admin:80
+  }
   handle /api/* {
     reverse_proxy api:4600
   }
   handle {
     root * /srv
+    @appDocument not path /assets/* /site.js /site.css /favicon.svg /robots.txt
+    header @appDocument Cache-Control "no-store"
     try_files {path} /index.html
     file_server
   }

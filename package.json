@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "packageManager": "pnpm@11.19.0",
-  "engines": { "node": ">=24.15 <25" },
+  "engines": {
+    "node": ">=24.15 <25"
+  },
   "scripts": {
     "dev:api": "pnpm --filter @suite/api dev",
     "dev:web": "pnpm --filter @suite/web dev",
@@ -11,6 +13,13 @@
     "typecheck": "pnpm -r typecheck",
     "db:generate": "pnpm --filter @suite/api db:generate",
     "db:deploy": "pnpm --filter @suite/api db:deploy",
-    "db:migrate": "pnpm --filter @suite/api db:migrate"
+    "db:migrate": "pnpm --filter @suite/api db:migrate",
+    "dev:admin": "pnpm --filter @suite/admin dev",
+    "dev:platform-admin": "pnpm --filter @suite/platform-admin dev",
+    "build:cloud": "node infrastructure/build-cloud-frontends.mjs",
+    "build:cloud:workspace": "node infrastructure/build-cloud-frontends.mjs web",
+    "build:cloud:tenant-admin": "node infrastructure/build-cloud-frontends.mjs admin",
+    "build:cloud:platform-admin": "node infrastructure/build-cloud-frontends.mjs platform-admin",
+    "test:seo": "node infrastructure/public-pages.test.mjs && node infrastructure/cloud-routes.test.mjs && node infrastructure/seo.test.mjs"
   }
 }

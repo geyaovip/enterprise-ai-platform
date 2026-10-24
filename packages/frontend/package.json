@@ -1,0 +1,35 @@
+{
+  "name": "@suite/frontend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./api": "./src/api.ts",
+    "./types": "./src/types.ts",
+    "./hooks": "./src/hooks.ts",
+    "./components": "./src/components.tsx",
+    "./styles.css": "./src/styles.css",
+    "./AdminPage": "./src/pages/AdminPage.tsx",
+    "./ChannelPage": "./src/pages/ChannelPage.tsx",
+    "./KnowledgePage": "./src/pages/KnowledgePage.tsx",
+    "./auth-screen": "./src/auth-screen.tsx",
+    "./AiConversation": "./src/AiConversation.tsx",
+"./AiProcessView": "./src/AiProcessView.tsx",
+"./safe-return": "./src/safe-return.ts",
+    "./session": "./src/session.tsx",
+    "./services": "./src/services.tsx",
+    "./labels": "./src/labels.ts",
+    "./CommercialPage": "./src/CommercialPage.tsx"
+  },
+  "dependencies": {
+    "lucide-react": "0.468.0",
+    "qrcode.react": "4.2.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0",
+    "react-router-dom": "7.18.4"
+  },
+  "devDependencies": {
+    "@types/react": "19.3.0",
+    "@types/react-dom": "19.3.0"
+  }
+}

@@ -1,11 +1,16 @@
 {
   "name": "enterprise-ai-platform",
+  "account_id": "be17a247378b4f5d64bc2eb9075eaa0f",
   "main": "cloudflare/worker.js",
   "compatibility_date": "2026-09-30",
-  "assets": {
-    "directory": "./apps/web/dist",
-    "binding": "ASSETS",
-    "not_found_handling": "single-page-application",
-    "run_worker_first": ["/api/*"]
-  }
+  "workers_dev": true,
+  "routes": [
+    { "pattern": "zhixingark.cn", "custom_domain": true },
+    { "pattern": "www.zhixingark.cn", "custom_domain": true }
+  ],
+  "services": [
+    { "binding": "WORKSPACE", "service": "enterprise-ai-platform-workspace" },
+    { "binding": "TENANT_ADMIN", "service": "enterprise-ai-platform-tenant-admin" },
+    { "binding": "PLATFORM_ADMIN", "service": "enterprise-ai-platform-platform-admin" }
+  ]
 }

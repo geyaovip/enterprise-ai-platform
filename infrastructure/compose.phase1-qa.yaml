@@ -1,0 +1,59 @@
+# Local, isolated Phase1 container rehearsal; never use customer credentials here.
+name: enterprise-ai-phase1-qa
+services:
+  migrate:
+    image: enterprise-ai-platform/api:phase1-qa
+    env_file: ../var/phase1-compose.env
+    command: ["pnpm", "--filter", "@suite/api", "db:deploy"]
+    restart: "no"
+  api:
+    image: enterprise-ai-platform/api:phase1-qa
+    env_file: ../var/phase1-compose.env
+    environment:
+      KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+    volumes:
+      - knowledge_originals:/var/lib/suite/knowledge
+    ports: ["127.0.0.1:4621:4600"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4600/api/v1/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  worker:
+    image: enterprise-ai-platform/api:phase1-qa
+    env_file: ../var/phase1-compose.env
+    environment:
+      KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+    volumes:
+      - knowledge_originals:/var/lib/suite/knowledge
+    ports: ["127.0.0.1:4622:4602"]
+    command: ["node", "apps/api/dist/worker.js"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:4602/health').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+  web:
+    image: enterprise-ai-platform/web:phase1-qa
+    environment: { SITE_ADDRESS: ":80" }
+    ports: ["127.0.0.1:4620:80"]
+    depends_on:
+      api: { condition: service_healthy }
+      admin: { condition: service_started }
+      platform-admin: { condition: service_started }
+  admin:
+    image: enterprise-ai-platform/admin:phase1-qa
+    environment: { SITE_ADDRESS: ":80" }
+    depends_on:
+      api: { condition: service_healthy }
+  platform-admin:
+    image: enterprise-ai-platform/platform-admin:phase1-qa
+    environment: { SITE_ADDRESS: ":80" }
+    depends_on:
+      api: { condition: service_healthy }
+volumes:
+  knowledge_originals:

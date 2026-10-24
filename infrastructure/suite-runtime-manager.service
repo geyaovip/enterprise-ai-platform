@@ -1,0 +1,19 @@
+[Unit]
+Description=Suite member Gateway lifecycle controller
+After=docker.service
+Requires=docker.service
+
+[Service]
+Type=simple
+EnvironmentFile=/opt/apaas/enterprise-ai-platform/shared/runtime-manager/manager.env
+ExecStart=/usr/bin/python3 /opt/apaas/enterprise-ai-platform/current/infrastructure/runtime-manager.py
+Restart=on-failure
+RestartSec=3
+UMask=0077
+PrivateTmp=true
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/opt/apaas/enterprise-ai-platform/shared/runtime-manager /opt/apaas/enterprise-ai-platform/shared/openclaw-members /run/suite-runtime
+
+[Install]
+WantedBy=multi-user.target
