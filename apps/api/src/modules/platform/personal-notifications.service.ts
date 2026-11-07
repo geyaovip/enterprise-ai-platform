@@ -1,60 +1,207 @@
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
-import { z } from 'zod';
-import { AuthService } from './auth.service';
-import { isManagementAi } from './management-ai';
-import { PrismaService } from '../prisma.service';
-import { readBody } from './security';
-import type { RequestContext } from './context';
+import { Inject, Injectable, NotFoundException } from "@nestjs/common";
+import { z } from "zod";
+import { AuthService } from "./auth.service";
+import { isManagementAi } from "./management-ai";
+import { PrismaService } from "../prisma.service";
+import { readBody } from "./security";
+import type { RequestContext } from "./context";
 
-export const NOTIFICATION_CONTRIBUTORS = Symbol('NOTIFICATION_CONTRIBUTORS');
-export type NotificationContributor = { appId: string; feed(ctx: RequestContext, page: number): Promise<{ items: any[]; total: number; unread: number }>; read(ctx: RequestContext, id: string): Promise<unknown> };
+export const NOTIFICATION_CONTRIBUTORS = Symbol("NOTIFICATION_CONTRIBUTORS");
+export type NotificationContributor = {
+  appId: string;
+  available(ctx: RequestContext): Promise<boolean>;
+  readAll(ctx: RequestContext, through: Date): Promise<number>;
+  feed(
+    ctx: RequestContext,
+    page: number,
+    unreadOnly?: boolean,
+  ): Promise<{ items: any[]; total: number; unread: number }>;
+  read(ctx: RequestContext, id: string): Promise<unknown>;
+};
 
 @Injectable()
 export class PersonalNotificationsService {
-  constructor(private readonly db: PrismaService, private readonly auth:AuthService, @Inject(NOTIFICATION_CONTRIBUTORS) private readonly contributors: NotificationContributor[]) {}
-  private async managementScopes(ctx:RequestContext) {
-    const scopes:string[]=[];
-    for (const appId of ['tenant_admin','platform_admin']) {
-      try { const fresh=await this.auth.taskContext({...ctx,appId,taskId:'notification-access'}); this.auth.require(fresh,'platform.ai.use'); scopes.push(appId); } catch { /* Revoked scopes never appear in the feed. */ }
+  constructor(
+    private readonly db: PrismaService,
+    private readonly auth: AuthService,
+    @Inject(NOTIFICATION_CONTRIBUTORS)
+    private readonly contributors: NotificationContributor[],
+  ) {}
+  private async canReadGeo(ctx: RequestContext) {
+    try { const fresh=await this.auth.taskContext({...ctx,appId:'geo',taskId:'notification-access'}); this.auth.require(fresh,'geo.read'); return true; } catch { return false; }
+  }
+  private async canReadBom(ctx: RequestContext) {
+    try {
+      const fresh = await this.auth.taskContext({
+        ...ctx,
+        appId: "mes",
+        taskId: "bom-notification-access",
+      });
+      for (const p of ["mes.ai.use", "mes.bom.write", "mes.material.read"])
+        this.auth.require(fresh, p);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  private async managementScopes(ctx: RequestContext) {
+    const scopes: string[] = [];
+    for (const appId of ["tenant_admin", "platform_admin"]) {
+      try {
+        const fresh = await this.auth.taskContext({
+          ...ctx,
+          appId,
+          taskId: "notification-access",
+        });
+        this.auth.require(fresh, "platform.ai.use");
+        scopes.push(appId);
+      } catch {
+        /* Revoked scopes never appear in the feed. */
+      }
     }
     return scopes;
   }
   async feed(ctx: RequestContext, body: unknown) {
-    const q = readBody(z.object({ page: z.coerce.number().int().min(1).max(100).default(1), page_size: z.coerce.number().int().min(1).max(100).default(20) }), body);
+    const q = readBody(
+      z.object({
+        status: z.enum(["all", "unread"]).default("all"),
+        page: z.coerce.number().int().min(1).max(100).default(1),
+        page_size: z.coerce.number().int().min(1).max(100).default(20),
+      }),
+      body,
+    );
+    const readThrough = new Date().toISOString();
     const limit = q.page * q.page_size;
-    const where = { tenantId: ctx.tenantId, recipientMembershipId: ctx.membershipId };
-    const installed = await this.db.tenantApp.findMany({ where: { tenantId: ctx.tenantId, enabled: true, granted: true } });
-    const ownWhere = { ...where, appId: { in: [...installed.map(a => a.appId), ...await this.managementScopes(ctx)] } };
+    const where = {
+      tenantId: ctx.tenantId,
+      recipientMembershipId: ctx.membershipId,
+    };
+    const installed = (await this.db.tenantApp.findMany({
+      where: { tenantId: ctx.tenantId, enabled: true, granted: true },
+    })).filter(a => a.appId !== "geo" || ctx.permissions.includes("geo.read"));
+    const ownWhere = {
+      ...where,
+      appId: {
+        in: [
+          ...installed.map((a) => a.appId),
+          ...(await this.managementScopes(ctx)),
+        ],
+      },
+      ...(!(await this.canReadBom(ctx)) ? { NOT: { kind: "mes-bom" } } : {}),
+    };
+    const filtered = {
+      ...ownWhere,
+      ...(q.status === "unread" ? { readAt: null } : {}),
+    };
     const [items, total, unread] = await this.db.$transaction([
-      this.db.personalNotification.findMany({ where: ownWhere, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], take: limit }),
-      this.db.personalNotification.count({ where: ownWhere }), this.db.personalNotification.count({ where: { ...ownWhere, readAt: null } }),
+      this.db.personalNotification.findMany({
+        where: filtered,
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
+        take: limit,
+      }),
+      this.db.personalNotification.count({ where: filtered }),
+      this.db.personalNotification.count({
+        where: { ...ownWhere, readAt: null },
+      }),
     ]);
-    const all: any[] = items.map(n => ({ ...n, id: 'platform.' + n.id }));
-    let count = total, unseen = unread;
-    for (const source of this.contributors.filter(c => installed.some(a => a.appId === c.appId))) {
-      let first: Awaited<ReturnType<NotificationContributor['feed']>> | null = null;
+    const all: any[] = items.map((n) => ({ ...n, id: "platform." + n.id }));
+    let count = total,
+      unseen = unread;
+    for (const source of this.contributors.filter((c) =>
+      installed.some((a) => a.appId === c.appId),
+    )) {
+      if (!(await source.available(ctx))) continue;
+      let first: Awaited<ReturnType<NotificationContributor["feed"]>> | null =
+        null;
       for (let page = 1; page <= Math.ceil(limit / 100); page++) {
-        const result = await source.feed(ctx, page);
+        const result = await source.feed(ctx, page, q.status === "unread");
         first ??= result;
-        all.push(...result.items.map(n => ({ ...n, id: source.appId + '.' + n.id })));
+        all.push(
+          ...result.items.map((n) => ({ ...n, id: source.appId + "." + n.id })),
+        );
         if (page * 100 >= result.total) break;
       }
-      count += first?.total ?? 0; unseen += first?.unread ?? 0;
+      count += first?.total ?? 0;
+      unseen += first?.unread ?? 0;
     }
-    all.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() || a.id.localeCompare(b.id));
-    return { items: all.slice((q.page - 1) * q.page_size, limit), total: count, unread: unseen, ...q };
+    all.sort(
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime() ||
+        a.id.localeCompare(b.id),
+    );
+    return {
+      items: all.slice((q.page - 1) * q.page_size, limit),
+      total: count,
+      unread: unseen,
+      readThrough,
+      ...q,
+    };
+  }
+  async readAll(ctx: RequestContext, body: unknown) {
+    const input = readBody(
+      z.object({ through: z.iso.datetime({ offset: true }) }).strict(),
+      body,
+    );
+    const through = new Date(Math.min(Date.parse(input.through), Date.now()));
+    const installed = (await this.db.tenantApp.findMany({
+      where: { tenantId: ctx.tenantId, enabled: true, granted: true },
+    })).filter(a => a.appId !== "geo" || ctx.permissions.includes("geo.read"));
+    const scopes = [
+      ...installed.map((a) => a.appId),
+      ...(await this.managementScopes(ctx)),
+    ];
+    const result = await this.db.personalNotification.updateMany({
+      where: {
+        tenantId: ctx.tenantId,
+        recipientMembershipId: ctx.membershipId,
+        appId: { in: scopes },
+        readAt: null,
+        createdAt: { lte: through },
+        ...(!(await this.canReadBom(ctx)) ? { NOT: { kind: "mes-bom" } } : {}),
+      },
+      data: { readAt: new Date() },
+    });
+    let count = result.count;
+    for (const source of this.contributors.filter((c) =>
+      installed.some((a) => a.appId === c.appId),
+    )) {
+      if (await source.available(ctx))
+        count += await source.readAll(ctx, through);
+    }
+    return { read: count, through: through.toISOString() };
   }
   async read(ctx: RequestContext, id: string) {
-    const [source, record] = id.split('.');
-    if (source === 'platform') {
-      const n = await this.db.personalNotification.findFirst({ where: { id: record, tenantId: ctx.tenantId, recipientMembershipId: ctx.membershipId } });
-      const app = n && await this.db.tenantApp.findUnique({ where: { tenantId_appId: { tenantId: ctx.tenantId, appId: n.appId } } });
-      if (!n || (isManagementAi(n.appId) ? !(await this.managementScopes(ctx)).includes(n.appId) : !app?.enabled || !app.granted)) throw new NotFoundException('通知不存在');
-      await this.db.personalNotification.updateMany({ where: { id: record, readAt: null }, data: { readAt: new Date() } });
+    const [source, record] = id.split(".");
+    if (source === "platform") {
+      const n = await this.db.personalNotification.findFirst({
+        where: {
+          id: record,
+          tenantId: ctx.tenantId,
+          recipientMembershipId: ctx.membershipId,
+        },
+      });
+      const app =
+        n &&
+        (await this.db.tenantApp.findUnique({
+          where: { tenantId_appId: { tenantId: ctx.tenantId, appId: n.appId } },
+        }));
+      if (
+        !n ||
+        (n.appId === "geo" && !(await this.canReadGeo(ctx))) ||
+        (n.kind === "mes-bom" && !(await this.canReadBom(ctx))) ||
+        (isManagementAi(n.appId)
+          ? !(await this.managementScopes(ctx)).includes(n.appId)
+          : !app?.enabled || !app.granted)
+      )
+        throw new NotFoundException("通知不存在");
+      await this.db.personalNotification.updateMany({
+        where: { id: record, readAt: null },
+        data: { readAt: new Date() },
+      });
       return { read: true };
     }
-    const contributor = this.contributors.find(c => c.appId === source);
-    if (!contributor) throw new NotFoundException('通知不存在');
+    const contributor = this.contributors.find((c) => c.appId === source);
+    if (!contributor) throw new NotFoundException("通知不存在");
     return contributor.read(ctx, record);
   }
 }

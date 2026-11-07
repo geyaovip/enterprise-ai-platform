@@ -1,4 +1,5 @@
 import { identityWhere } from './account-input';
+import { nativeModelsEnabled, AI_NOT_OPEN_MESSAGE } from '../ai/native-ai-policy';
 import { ManagedRuntimeService } from '../ai/managed-runtime.service';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma.service';
@@ -33,7 +34,7 @@ export class PlatformService {
     const enabled = (capability: string) => capabilities.some(c => c.capability === capability && c.delivered && c.enabled);
     const runtime = await this.managed.status(ctx).catch(()=>({managed:true, available:false, state:'unavailable'}));
     return {
-      ai: { ...(runtime.managed?{runtimeState:runtime.state,managed:true}:{}),enabled: enabled('ai') && this.registry.list().some(a=>a.aiCapabilities.length>0&&installed.some(i=>i.appId===a.appId)), configured: bindings.some(b => b.kind === 'runtime') || runtime.available },
+      ai: { ...(runtime.managed?{runtimeState:runtime.state,managed:true}:{}),enabled: (!nativeModelsEnabled() || enabled('ai')) && this.registry.list().some(a=>a.aiCapabilities.length>0&&installed.some(i=>i.appId===a.appId)), configured: bindings.some(b => b.kind === 'runtime') || runtime.available,mode:nativeModelsEnabled()?'connected':'notice',modelInvocationEnabled:nativeModelsEnabled(),message:nativeModelsEnabled()?null:AI_NOT_OPEN_MESSAGE },
       knowledge: { enabled: enabled('knowledge'), configured: bindings.some(b => b.kind === 'knowledge') },
     };
   }

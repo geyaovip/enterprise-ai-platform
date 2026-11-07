@@ -1,0 +1,1 @@
+ALTER INDEX "ChannelChatSession_connectionId_externalChatId_membershipId_app" RENAME TO "ChannelChatSession_connectionId_externalChatId_membershipId_key";

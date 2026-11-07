@@ -1,13 +1,16 @@
-import { Body, Controller, Get, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
+import { AuthProtectionService } from './auth-protection.service';
+import { ForbiddenException, Body, Controller, Get, Param, Patch, Post, Query, Req, Res } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { z } from 'zod';
+import { EmailAuthService } from './email-auth.service';
+import { setSessionCookie } from './auth-session';
 import { InvitationService } from './invitation.service';
 import { AuthService } from './auth.service';
 import { PlatformService } from './platform.service';
 import { readBody } from './security';
 import { PersonalNotificationsService } from './personal-notifications.service';
 
-import { accountInput, identityInput } from './account-input';
+import { identityInput, accountInput } from './account-input';
 
 const roles = z.enum(['admin', 'sales', 'purchasing', 'warehouse', 'finance']);
 const memberCreate = z.object({ email: identityInput, name: z.string().trim().min(1).max(100), password: z.string().min(12).max(200), role: roles, orgUnitId: z.uuid().optional() });
@@ -15,10 +18,12 @@ const memberPatch = z.object({ role: roles.optional(), active: z.boolean().optio
 
 @Controller('api/v1')
 export class PlatformController {
-  constructor(private readonly auth: AuthService, private readonly platform: PlatformService, private readonly invitations:InvitationService, private readonly notifications:PersonalNotificationsService) {}
+  constructor(private readonly auth: AuthService, private readonly protection: AuthProtectionService, private readonly emailAuth: EmailAuthService, private readonly platform: PlatformService, private readonly invitations:InvitationService, private readonly notifications:PersonalNotificationsService) {}
 
   @Get('tenants/:tenantKey/notifications')
   async notificationsFeed(@Req() req:Request,@Param('tenantKey') key:string,@Query() q:unknown){return this.notifications.feed(await this.auth.context(req,key,'platform'),q);}
+  @Post('tenants/:tenantKey/notifications/read-all')
+  async readAllPersonalNotifications(@Req() req:Request,@Param('tenantKey') key:string,@Body() body:unknown){return this.notifications.readAll(await this.auth.context(req,key,'platform'),body);}
   @Post('tenants/:tenantKey/notifications/:id/read')
   async readPersonalNotification(@Req() req:Request,@Param('tenantKey') key:string,@Param('id') id:string){return this.notifications.read(await this.auth.context(req,key,'platform'),id);}
 
@@ -27,24 +32,51 @@ export class PlatformController {
   @Post('auth/invitation/accept')
   acceptInvitation(@Req() req:Request,@Body() body:unknown){return this.invitations.accept(req,body);}
   @Get('tenants/:tenantKey/invitations')
-  async invitationsList(@Req() req:Request,@Param('tenantKey') key:string){return this.invitations.list(await this.auth.context(req,key,'platform'));}
+  async invitationsList(@Req() req:Request,@Param('tenantKey') key:string){return this.invitations.list(await this.auth.context(req,key,'platform'),req.query);}
   @Post('tenants/:tenantKey/invitations')
   async invite(@Req() req:Request,@Param('tenantKey') key:string,@Body() body:unknown){return this.invitations.create(await this.auth.context(req,key,'platform'),body);}
   @Post('tenants/:tenantKey/invitations/:id/revoke')
   async revokeInvitation(@Req() req:Request,@Param('tenantKey') key:string,@Param('id') id:string){return this.invitations.revoke(await this.auth.context(req,key,'platform'),id);}
 
   @Post('auth/login')
-  async login(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
-    const input = readBody(z.object({ account: identityInput.optional(), email: z.email().optional(), password: z.string().min(1).max(200) }).refine(input => Boolean(input.account || input.email), '请输入账号'), body);
-    const result = await this.auth.login(input.account ?? input.email!, input.password, req.ip ?? req.socket.remoteAddress ?? 'unknown');
-    res.cookie('suite_session', result.token, { httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 7 * 24 * 3600_000 });
+  legacyLogin() { throw new ForbiddenException('请使用邮箱验证码登录'); }
+
+  @Post('auth/register')
+  legacyRegister() { throw new ForbiddenException('无需注册，请使用邮箱验证码登录'); }
+
+  @Get('auth/email/config')
+  emailConfiguration(@Res({ passthrough: true }) res: Response) { res.setHeader('Cache-Control', 'no-store'); return { turnstile: this.protection.publicConfiguration() }; }
+
+  @Post('auth/email/request')
+  requestEmailCode(@Body() body: unknown, @Req() req: Request) {
+    const input = readBody(z.object({ email: z.string().trim().toLowerCase().max(254).pipe(z.email()), humanToken: z.string().min(1).max(2048).optional() }).strict(), body);
+    return this.emailAuth.request(input.email, req.ip ?? req.socket.remoteAddress ?? 'unknown', input.humanToken);
+  }
+
+  @Post('auth/email/verify')
+  async verifyEmailCode(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const input = readBody(z.object({ email: z.string().trim().toLowerCase().max(254).pipe(z.email()), challengeId: z.uuid(), code: z.string().regex(/^\d{6}$/) }).strict(), body);
+    const result = await this.emailAuth.verify(input, req.ip ?? req.socket.remoteAddress ?? 'unknown');
+    setSessionCookie(res, result.token, result.expiresAt);
+    res.setHeader('Cache-Control', 'no-store');
     return { user: result.user };
   }
 
-  @Post('auth/register')
-  register(@Body() body: unknown, @Req() req: Request) {
-    const input = readBody(z.object({ account: accountInput, password: z.string().min(12).max(200) }).strict(), body);
-    return this.auth.register(input.account, input.password, req.ip ?? req.socket.remoteAddress ?? 'unknown');
+  @Post('auth/email/bind')
+  async bindEmail(@Body() body: unknown, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    const actor = await this.auth.user(req);
+    const input = readBody(z.object({ email: z.string().trim().toLowerCase().max(254).pipe(z.email()), challengeId: z.uuid(), code: z.string().regex(/^\d{6}$/) }).strict(), body);
+    const result = await this.emailAuth.verify(input, req.ip ?? req.socket.remoteAddress ?? 'unknown', actor.id);
+    setSessionCookie(res, result.token, result.expiresAt);
+    res.setHeader('Cache-Control', 'no-store');
+    return { user: result.user };
+  }
+
+  @Post('auth/logout-all')
+  async logoutAll(@Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    await this.auth.logoutAll(req);
+    res.clearCookie('suite_session', { path: '/' });
+    return { ok: true };
   }
 
   @Post('onboarding/enterprise')

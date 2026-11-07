@@ -60,16 +60,21 @@ export class CollaborationService {
     });
   }
   async notifications(ctx: RequestContext, query: unknown) {
-    this.member(ctx); const q = readBody(pageQuery, query); const where = { tenantId: ctx.tenantId, recipientMembershipId: ctx.membershipId };
+    this.member(ctx); const q = readBody(pageQuery.extend({ unreadOnly: z.boolean().default(false) }), query); const owner = { tenantId: ctx.tenantId, recipientMembershipId: ctx.membershipId }; const where = { ...owner, ...(q.unreadOnly ? { readAt: null } : {}) };
     const [items, total, unread] = await this.db.$transaction([
       this.db.erpNotification.findMany({ where, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], skip: (q.page - 1) * q.page_size, take: q.page_size }),
-      this.db.erpNotification.count({ where }), this.db.erpNotification.count({ where: { ...where, readAt: null } }),
+      this.db.erpNotification.count({ where }), this.db.erpNotification.count({ where: { ...owner, readAt: null } }),
     ]);
     const ids=items.filter(i=>i.dedupeKey.startsWith('workflow:')).map(i=>i.dedupeKey.split(':')[1]);const flows=await this.db.erpWorkflow.findMany({where:{tenantId:ctx.tenantId,id:{in:ids}},select:{id:true,status:true}});const statuses=new Map(flows.map(f=>[f.id,f.status]));
     const claims=await this.db.erpReceiptClaim.findMany({where:{tenantId:ctx.tenantId,id:{in:items.filter(i=>i.dedupeKey.startsWith('receipt-claim:')).map(i=>i.dedupeKey.split(':')[1])}},select:{id:true,receiptId:true}});
     const followups=await this.db.erpOpportunityFollowup.findMany({where:{tenantId:ctx.tenantId,id:{in:items.filter(i=>i.dedupeKey.startsWith('followup_due:')).map(i=>i.dedupeKey.split(':')[1])}},select:{id:true,opportunityId:true}});
     const related=(i:any)=>{const claim=claims.find(c=>i.dedupeKey.split(':')[1]===c.id);const followup=followups.find(c=>i.dedupeKey.split(':')[1]===c.id);return claim?{relatedResource:{type:'receipt',id:claim.receiptId}}:followup?{relatedResource:{type:'opportunity',id:followup.opportunityId}}:{};};
     return { items:items.map(i=>({...i,...related(i),...(i.dedupeKey.startsWith('workflow:')?{workflowStatus:statuses.get(i.dedupeKey.split(':')[1])??'removed'}:{})})), total, unread, page: q.page, page_size: q.page_size };
+  }
+  async readAllNotifications(ctx: RequestContext, through: Date) {
+    this.member(ctx);
+    const result = await this.db.erpNotification.updateMany({ where: { tenantId: ctx.tenantId, recipientMembershipId: ctx.membershipId, readAt: null, createdAt: { lte: through } }, data: { readAt: new Date() } });
+    return result.count;
   }
   async readNotification(ctx: RequestContext, id: string) {
     this.member(ctx); const where = { id, tenantId: ctx.tenantId, recipientMembershipId: ctx.membershipId };

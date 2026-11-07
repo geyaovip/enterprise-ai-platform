@@ -1,3 +1,4 @@
+import { readCollectionPage, collectionResult } from './collection-page';
 import { identityInput, identityWhere } from './account-input';
 import { Body, Controller, ForbiddenException, Get, Param, Patch, Post, Put, Req, ConflictException } from '@nestjs/common';
 import type { Request } from 'express';
@@ -10,6 +11,7 @@ import { PrismaService } from '../prisma.service';
 import { hashPassword, readBody } from './security';
 import { ManagedRuntimeService } from '../ai/managed-runtime.service';
 import { InfrastructureService } from './infrastructure.service';
+import { ensureDefaultApps } from './default-apps';
 
 @Controller('api/v1/operator')
 export class OperatorController {
@@ -26,7 +28,11 @@ export class OperatorController {
   @Get('adapters') async adapters(@Req() req: Request) { await this.operator(req); return this.infra.adapters(); }
   @Get('tenants') async tenants(@Req() req: Request) {
     await this.operator(req);
-    return this.db.tenant.findMany({ select: { id: true, slug: true, name: true, active: true, createdAt: true, apps: { select: { appId: true, granted: true, enabled: true } }, _count: { select: { members: true } } }, orderBy: { createdAt: 'desc' }, take: 200 });
+    const paging = readCollectionPage(req.query);
+    const query = readBody(z.object({ q:z.string().trim().max(200).optional(), active:z.enum(['true','false']).optional() }),req.query);
+    const where = { ...(query.active ? {active:query.active==='true'} : {}), ...(query.q ? {OR:[{name:{contains:query.q,mode:'insensitive' as const}},{slug:{contains:query.q,mode:'insensitive' as const}}]} : {}) };
+    const rows = await this.db.tenant.findMany({ where, select: { id: true, slug: true, name: true, active: true, createdAt: true, apps: { select: { appId: true, granted: true, enabled: true } }, _count: { select: { members: true } } }, orderBy: [{ createdAt: 'desc' }, { id: 'asc' }], ...(paging ? {skip:paging.skip,take:paging.take} : {skip:0,take:200}) });
+    return paging ? collectionResult(rows, await this.db.tenant.count({where}), paging) : rows;
   }
   @Post('tenants') async create(@Req() req: Request, @Body() body: unknown) {
     const actor = await this.operator(req);
@@ -38,7 +44,7 @@ export class OperatorController {
       const member = await tx.membership.create({ data: { tenantId: tenant.id, userId: user.id, role: 'admin' } });
       const root = await tx.orgUnit.create({ data: { tenantId: tenant.id, name: tenant.name } });
       await tx.membershipOrg.create({ data: { tenantId: tenant.id, membershipId: member.id, orgUnitId: root.id, primary: true } });
-      await tx.tenantApp.create({ data: { tenantId: tenant.id, appId: 'erp', granted: true, enabled: true } });
+      await ensureDefaultApps(tx, tenant.id);
       await tx.tenantCapability.createMany({ data: ['ai', 'knowledge'].map(capability => ({ tenantId: tenant.id, capability, delivered: true, enabled: true })) });
       await tx.operatorAudit.create({ data: { userId: actor.id, tenantId: tenant.id, action: 'platform.tenant.create', resourceId: tenant.id, detail: { slug: tenant.slug } } });
       return { id: tenant.id, slug: tenant.slug, name: tenant.name };
@@ -81,7 +87,7 @@ export class OperatorController {
     await this.operator(req); return this.infra.health(id, bindingId);
   }
   @Get('audit') async audit(@Req() req: Request) {
-    await this.operator(req); return this.db.operatorAudit.findMany({ orderBy: { createdAt: 'desc' }, take: 100 });
+    await this.operator(req); const paging=readCollectionPage(req.query); const rows=await this.db.operatorAudit.findMany({orderBy:[{createdAt:'desc'},{id:'asc'}],...(paging?{skip:paging.skip,take:paging.take}:{skip:0,take:100})}); return paging?collectionResult(rows,await this.db.operatorAudit.count(),paging):rows;
   }
   @Get('usage') async usage(@Req() req: Request) {
     await this.operator(req);

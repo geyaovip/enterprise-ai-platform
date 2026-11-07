@@ -2,5 +2,9 @@
 @import './interaction.css';
 
 @import './theme.css';
+@import './search-select.css';
 @import './ai-dialog.css';
 @import './application-switcher.css';
+@import './focus.css';
+@import './record-actions.css';
+@import './appearance.css';

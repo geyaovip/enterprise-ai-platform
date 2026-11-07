@@ -1,0 +1,20 @@
+.sidebar .crm-nav-workspace { margin-bottom: 8px; }
+.sidebar .crm-nav-group { margin-bottom: 8px; }
+.sidebar .crm-nav-group h2 { padding: 0; margin: 0; }
+.sidebar .crm-nav-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  min-height: 40px;
+  padding: 10px 12px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 500;
+  text-align: left;
+}
+.sidebar .crm-nav-toggle:hover { background: var(--brand-soft); color: var(--brand); }
+.crm-nav-toggle[aria-expanded="true"] svg { transform: rotate(90deg); }
+.sidebar .crm-nav-group > div:not([hidden]) { display: flex; flex-direction: column; gap: 2px; }

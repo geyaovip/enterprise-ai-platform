@@ -30,22 +30,30 @@
     "test:openclaw-retry-budget": "node tests/openclaw-retry-budget.cjs",
     "test:erp-ai-efficiency": "pnpm build && node tests/erp-ai-efficiency.cjs",
     "test:crm-real-model": "pnpm build && node tests/crm-real-model.cjs",
-    "test:mes": "pnpm build && node tests/mes-flow.cjs && node tests/mes-ai.cjs"
+    "test:mes": "pnpm build && node tests/mes-flow.cjs && node tests/mes-ai.cjs",
+    "test:business-intake": "pnpm build && node tests/business-intake.cjs",
+    "test:auth-protection": "pnpm build && node tests/email-auth.cjs && node tests/auth-protection.cjs",
+    "test:crm-unified": "pnpm build && node tests/crm-unified-flow.cjs && node tests/crm-legacy-preflight.cjs",
+    "test:content": "pnpm build && node tests/content-provider.cjs && node tests/content-media.cjs && node tests/content-layout.cjs && node tests/content-studio.cjs && node tests/content-canvas.cjs && node tests/content-flow.cjs && node tests/content-daily-flow.cjs && node tests/content-ai.cjs",
+    "test:geo": "pnpm build && node tests/geo-native.cjs"
   },
   "dependencies": {
     "@larksuiteoapi/node-sdk": "1.74.0",
+    "@modelcontextprotocol/sdk": "1.32.2",
     "@nestjs/common": "11.2.6",
     "@nestjs/core": "11.2.6",
     "@nestjs/platform-express": "11.2.6",
     "@prisma/adapter-pg": "7.10.0",
     "@prisma/client": "7.10.0",
+    "@wecom/aibot-node-sdk": "1.0.7",
     "cookie-parser": "1.4.7",
+    "dingtalk-stream": "2.1.6-beta.1",
     "dotenv": "18.0.4",
+    "express": "5.2.1",
     "pg": "8.23.0",
     "reflect-metadata": "0.2.2",
     "rxjs": "7.8.2",
-    "zod": "4.6.5",
-    "express": "5.2.1"
+    "zod": "4.6.5"
   },
   "devDependencies": {
     "@types/cookie-parser": "1.4.10",

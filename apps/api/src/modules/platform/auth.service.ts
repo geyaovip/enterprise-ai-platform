@@ -1,55 +1,18 @@
-import { ConflictException, ForbiddenException, HttpException, Injectable, UnauthorizedException } from '@nestjs/common';
+import { ConflictException, ForbiddenException, Injectable, UnauthorizedException } from '@nestjs/common';
 import type { Request } from 'express';
 import { randomUUID } from 'node:crypto';
 import { isManagementAi } from './management-ai';
-import { identityWhere } from './account-input';
+import { SESSION_ABSOLUTE_MS, SESSION_IDLE_MS, setSessionCookie } from './auth-session';
 import { PrismaService } from '../prisma.service';
 import { QuotaService } from '../orchestration/quota.service';
 import { ApplicationRegistry } from './application-registry';
-import { checkPassword, hashPassword, newSessionToken, sessionToken, tokenHash } from './security';
+import { checkPassword, hashPassword, sessionToken, tokenHash } from './security';
 import { type AppContext, type RequestContext } from './context';
+import { DEFAULT_APP_IDS, ensureDefaultApps } from './default-apps';
 
 @Injectable()
 export class AuthService {
-  private readonly loginFailures = new Map<string, { count: number; resetAt: number }>();
   constructor(private readonly db: PrismaService, private readonly apps: ApplicationRegistry, private readonly quota:QuotaService) {}
-
-  async login(email: string, password: string, sourceIp: string) {
-    const normalizedEmail = email.trim().toLowerCase();
-    const failureKey = `${sourceIp}:${normalizedEmail}`;
-    const now = Date.now();
-    const previous = this.loginFailures.get(failureKey);
-    if (previous && previous.resetAt > now && previous.count >= 10) throw new HttpException('登录尝试过多，请稍后再试', 429);
-    const user = await this.db.user.findUnique({ where: identityWhere(normalizedEmail) });
-    if (!user?.active || !checkPassword(password, user.passwordHash)) {
-      const active = previous && previous.resetAt > now ? previous : { count: 0, resetAt: now + 15 * 60_000 };
-      this.loginFailures.delete(failureKey);
-      this.loginFailures.set(failureKey, { count: active.count + 1, resetAt: active.resetAt });
-      if (this.loginFailures.size > 10_000) this.loginFailures.delete(this.loginFailures.keys().next().value!);
-      throw new UnauthorizedException('账号或密码错误');
-    }
-    this.loginFailures.delete(failureKey);
-    const token = newSessionToken();
-    await this.db.session.create({ data: { userId: user.id, tokenHash: tokenHash(token), expiresAt: new Date(Date.now() + 7 * 24 * 3600_000) } });
-    return { token, user: { id: user.id, name: user.name, email: user.email } };
-  }
-
-  private readonly registrations = new Map<string, { count: number; resetAt: number }>();
-  async register(account: string, password: string, sourceIp: string) {
-    const now = Date.now();
-    const old = this.registrations.get(sourceIp);
-    const rate = old && old.resetAt > now ? old : { count: 0, resetAt: now + 3600_000 };
-    if (rate.count >= 10) throw new HttpException('注册尝试过多，请稍后再试', 429);
-    this.registrations.delete(sourceIp); this.registrations.set(sourceIp, { ...rate, count: rate.count + 1 });
-    if (this.registrations.size > 10_000) this.registrations.delete(this.registrations.keys().next().value!);
-    try {
-      const user = await this.db.user.create({ data: { account, name: account, passwordHash: hashPassword(password) }, select: { id: true, account: true, name: true } });
-      return { user };
-    } catch (error) {
-      if ((error as { code?: string }).code === 'P2002') throw new ConflictException('该账号已被注册，请更换账号或直接登录');
-      throw error;
-    }
-  }
 
   async createEnterprise(req: Request, name: string) {
     const actor = await this.user(req);
@@ -60,13 +23,15 @@ export class AuthService {
       const existing = await tx.tenant.findUnique({ where: { selfServiceOwnerId: actor.id } });
       if (existing) {
         if (!existing.active || !await tx.membership.findFirst({where:{tenantId:existing.id,userId:actor.id,active:true,role:'admin'}})) throw new ForbiddenException('已创建的企业或管理员身份已停用，请联系平台运营人员');
+        const filled = await ensureDefaultApps(tx, existing.id);
+        if (filled.count) await tx.auditEvent.create({ data: { tenantId: existing.id, userId: actor.id, membershipId: (await tx.membership.findUniqueOrThrow({where:{tenantId_userId:{tenantId:existing.id,userId:actor.id}}})).id, appId: 'platform', requestId: String(req.headers['x-request-id'] ?? randomUUID()), action: 'platform.apps.default_fill', resourceType: 'Tenant', resourceId: existing.id, detail: { appIds: [...DEFAULT_APP_IDS], inserted: filled.count } } });
         return { tenant: { id: existing.id, slug: existing.slug, name: existing.name }, existing: true };
       }
       const tenant = await tx.tenant.create({ data: { name, slug: 'org-' + randomUUID().replaceAll('-', '').slice(0, 16), selfServiceOwnerId: actor.id } });
       const member = await tx.membership.create({ data: { tenantId: tenant.id, userId: actor.id, role: 'admin' } });
       const root = await tx.orgUnit.create({ data: { tenantId: tenant.id, name: '企业总部' } });
       await tx.membershipOrg.create({ data: { tenantId: tenant.id, membershipId: member.id, orgUnitId: root.id, primary: true } });
-      await tx.tenantApp.create({ data: { tenantId: tenant.id, appId: 'erp', enabled: true, granted: true } });
+      await ensureDefaultApps(tx, tenant.id);
       await tx.tenantCapability.createMany({ data: ['ai', 'knowledge'].map(capability => ({ tenantId: tenant.id, capability, delivered: true, enabled: true })) });
       await tx.auditEvent.create({ data: { tenantId: tenant.id, userId: actor.id, membershipId: member.id, appId: 'platform', requestId: String(req.headers['x-request-id'] ?? randomUUID()), action: 'platform.tenant.self_create', resourceType: 'Tenant', resourceId: tenant.id } });
       return { tenant: { id: tenant.id, slug: tenant.slug, name: tenant.name }, existing: false };
@@ -74,13 +39,26 @@ export class AuthService {
   }
 
   async user(req: Request) {
-    const session = await this.db.session.findUnique({ where: { tokenHash: tokenHash(sessionToken(req)) }, include: { user: true } });
-    if (!session || session.expiresAt <= new Date() || !session.user.active) throw new UnauthorizedException('登录已失效');
+    const token = sessionToken(req);
+    const session = await this.db.session.findUnique({ where: { tokenHash: tokenHash(token) }, include: { user: true } });
+    const now = Date.now();
+    if (!session || session.expiresAt.getTime() <= now || !session.user.active || session.createdAt.getTime() + SESSION_ABSOLUTE_MS <= now) throw new UnauthorizedException('登录已失效');
+    const expiresAt = new Date(Math.min(now + SESSION_IDLE_MS, session.createdAt.getTime() + SESSION_ABSOLUTE_MS));
+    if (expiresAt.getTime() - session.expiresAt.getTime() > 30 * 24 * 3600_000 && (!req.res || !req.res.headersSent)) {
+      // A conditional update cannot resurrect a session deleted by logout/revocation.
+      const renewed = await this.db.session.updateMany({ where: { id: session.id, expiresAt: session.expiresAt }, data: { expiresAt } });
+      if (renewed.count && req.res) setSessionCookie(req.res, token, expiresAt);
+    }
     return session.user;
   }
 
   async logout(req: Request) {
     await this.db.session.deleteMany({ where: { tokenHash: tokenHash(sessionToken(req)) } });
+  }
+
+  async logoutAll(req: Request) {
+    const actor = await this.user(req);
+    await this.db.session.deleteMany({ where: { userId: actor.id } });
   }
 
   async changePassword(req: Request, currentPassword: string, nextPassword: string) {

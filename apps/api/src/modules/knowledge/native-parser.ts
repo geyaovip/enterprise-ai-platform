@@ -1,17 +1,21 @@
+import { knowledgeModelsEnabled } from './knowledge-policy';
 import { spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { ServiceUnavailableException } from '@nestjs/common';
 import { pdfWithOcr, recognizeImage, type OcrOptions } from './native-ocr';
 
 const messages: Record<string, string> = {
+  KNOWLEDGE_RETRY_REQUIRES_REVIEW:'上次处理已有模型请求记录，为避免重复计费已停止；请核查用量后手动重新处理。',
+  KNOWLEDGE_USAGE_UNKNOWN:'模型未返回完整用量，本次已停止；请核查用量后手动重新处理。',
+  KNOWLEDGE_MODEL_BUDGET_EXCEEDED:'资料处理达到模型调用或Token预算，请拆分资料后处理。',
   EMBEDDING_UNAVAILABLE: '嵌入模型暂不可用，请稍后重试或联系管理员检查模型连接。',
   EMBEDDING_INVALID: '嵌入模型返回无效数据，请联系管理员检查配置。',
   EMBEDDING_DIMENSION_CHANGED: '嵌入模型维度已变化，请联系管理员重新配置并重建索引。',
   VECTOR_EXTENSION_UNAVAILABLE: '向量检索组件尚未配置，请联系平台管理员。',
 };
-export class NativeKnowledgeError extends ServiceUnavailableException { constructor(public readonly code: string) { super(messages[code] ?? '文档处理未完成，请检查文档处理状态或联系管理员。'); this.name = code; } }
+export class NativeKnowledgeError extends ServiceUnavailableException { automaticRetry=true; constructor(public readonly code: string) { super(messages[code] ?? '文档处理未完成，请检查文档处理状态或联系管理员。'); this.name = code; } }
 export type Block = { text: string; locator: Record<string, unknown> };
-export const nativeFormats = ['txt', 'md', 'csv', 'pdf', 'docx', 'xlsx', 'png', 'jpg', 'jpeg'];
+export const nativeFormats = ['txt', 'md', 'csv', 'pdf', 'docx', 'xls', 'xlsx', 'pcbdoc', 'png', 'jpg', 'jpeg'];
 export function command(binary: string, args: string[], bytes: Buffer, signal?: AbortSignal, unavailable = 'PARSER_UNAVAILABLE'): Promise<string> {
   return new Promise((resolve, reject) => {
     const child = spawn(process.env.KNOWLEDGE_PYTHON_PATH ?? 'python3', [join(__dirname, 'parser-runner.py'), binary, ...args], { stdio: ['pipe', 'pipe', 'pipe'], env: { ...process.env, OMP_THREAD_LIMIT: '1' } });
@@ -24,7 +28,7 @@ export function command(binary: string, args: string[], bytes: Buffer, signal?: 
     child.stdout.on('data', (buf: Buffer) => { size += buf.length; if (size > 2 * 1024 * 1024) { child.kill('SIGKILL'); finish(new NativeKnowledgeError('DOCUMENT_TOO_LARGE')); } else buffers.push(buf); });
     child.stderr.on('data', (buf: Buffer) => { if (stderr.length < 1000) stderr += buf.toString(); });
     child.stdin.on('error', () => {});
-    child.on('close', (code, signal) => finish(code !== 0 || signal ? new NativeKnowledgeError(signal === 'SIGXCPU' ? 'PARSER_TIMEOUT' : signal === 'SIGXFSZ' || stderr.includes('DOCUMENT_TOO_LARGE') ? 'DOCUMENT_TOO_LARGE' : stderr.includes('No such file or directory') ? unavailable : 'DOCUMENT_INVALID') : undefined, Buffer.concat(buffers).toString('utf8')));
+    child.on('close', (code, signal) => finish(code !== 0 || signal ? new NativeKnowledgeError(signal === 'SIGXCPU' ? 'PARSER_TIMEOUT' : signal === 'SIGXFSZ' || stderr.includes('DOCUMENT_TOO_LARGE') ? 'DOCUMENT_TOO_LARGE' : stderr.includes('DOCUMENT_FORMAT_UNSUPPORTED') ? 'DOCUMENT_FORMAT_UNSUPPORTED' : stderr.includes('No such file or directory') ? unavailable : 'DOCUMENT_INVALID') : undefined, Buffer.concat(buffers).toString('utf8')));
     child.stdin.end(bytes);
   });
 }
@@ -51,24 +55,48 @@ function markdownBlocks(text: string): Block[] {
   if (code) blocks.push({ text: code, locator: { line: start + 1, end: { line: lines.length }, headings: [...headings], block: 'code' } });
   return blocks;
 }
+function csvBlocks(text:string):Block[]{
+  const rows:Block[]=[];let values:string[]=[],field='',quoted=false,line=1,start=1;
+  const finish=()=>{values.push(field);if(values.length>256)throw new NativeKnowledgeError('DOCUMENT_TOO_LARGE');rows.push({text:values.join(' | '),locator:{line:start,end:{line},block:'table',table:1}});values=[];field='';start=line+1;};
+  for(let i=0;i<text.length;i++){
+    const c=text[i];
+    if(c==='"'){
+      if(quoted&&text[i+1]==='"'){field+='"';i++;}
+      else if(quoted)quoted=false;
+      else if(!field)quoted=true;
+      else throw new NativeKnowledgeError('DOCUMENT_INVALID');
+    }else if(c===','&&!quoted){values.push(field);field='';if(values.length>256)throw new NativeKnowledgeError('DOCUMENT_TOO_LARGE');}
+    else if(c==='\n'){if(quoted)field+='\n';else finish();line++;}
+    else if(c!=='\r')field+=c;
+  }
+  if(quoted)throw new NativeKnowledgeError('DOCUMENT_INVALID');
+  if(field||values.length)finish();
+  const header=rows.find(r=>r.text.trim())?.text.slice(0,200)??'';
+  return rows.map(r=>({...r,locator:{...r.locator,tableHeader:header}}));
+}
 export async function parseNativeDocument(filename: string, bytes: Buffer, options: OcrOptions = {}): Promise<Block[]> {
   const ext = filename.split('.').at(-1)?.toLowerCase() ?? '';
   if (!nativeFormats.includes(ext)) throw new NativeKnowledgeError('DOCUMENT_FORMAT_UNSUPPORTED');
   let blocks: Block[];
   if (ext === 'pdf') {
     const text = await command(process.env.KNOWLEDGE_PDFTOTEXT_PATH ?? 'pdftotext', ['-layout', '-enc', 'UTF-8', '-', '-'], bytes, options.signal);
-    if (text.length > 180000) throw new NativeKnowledgeError('DOCUMENT_TOO_LARGE');
-    blocks = await pdfWithOcr(bytes, text.split('\f'), options);
+    // Layout whitespace is not content. Preserve line breaks and page scope while bounding
+    // the raw process output separately (2MiB in command), before embedding any text.
+    const pages=text.split('\f').map(page=>page.split('\n').map(line=>line.replace(/[\t ]+/g,' ').trim()).join('\n'));
+    if (pages.join('').length > 180000) throw new NativeKnowledgeError('DOCUMENT_TOO_LARGE');
+    blocks = await pdfWithOcr(bytes, pages, options);
   } else if (['png', 'jpg', 'jpeg'].includes(ext)) {
-    blocks = [{ text: await recognizeImage(bytes, options), locator: { image: true, ocr: true, ocrProvider: options.binding?.enabled ? 'openai-vision' : 'tesseract' } }];
-  } else if (ext === 'docx' || ext === 'xlsx') {
+    blocks = [{ text: await recognizeImage(bytes, options), locator: { image: true, ocr: true, ocrProvider: options.binding?.enabled&&knowledgeModelsEnabled() ? 'openai-vision' : 'tesseract' } }];
+  } else if(ext==='pcbdoc'){
+    blocks=JSON.parse(await command(process.env.KNOWLEDGE_PYTHON_PATH??'python3',[join(__dirname,'pcb_native.py'),'knowledge'],bytes,options.signal));
+  } else if (ext === 'docx' || ext === 'xlsx' || ext === 'xls') {
     blocks = JSON.parse(await command(process.env.KNOWLEDGE_PYTHON_PATH ?? 'python3', [join(__dirname, 'office-parser.py'), ext], bytes, options.signal));
   } else {
     let text: string;
     try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { throw new NativeKnowledgeError('DOCUMENT_ENCODING'); }
     if (text.length > 180000) throw new NativeKnowledgeError('DOCUMENT_TOO_LARGE');
     if (/[\x00-\x08\x0b\x0e-\x1f]/.test(text)) throw new NativeKnowledgeError('DOCUMENT_INVALID');
-    blocks = ext === 'md' ? markdownBlocks(text) : text.split(/\r?\n/).map((text, index) => ({ text, locator: { line: index + 1 } }));
+    blocks = ext === 'csv' ? csvBlocks(text.replace(/^\uFEFF/,'')) : ext === 'md' ? markdownBlocks(text) : text.split(/\r?\n/).map((text, index) => ({ text, locator: { line: index + 1 } }));
   }
   if (blocks.reduce((sum, x) => sum + x.text.length, 0) > 180000) throw new NativeKnowledgeError('DOCUMENT_TOO_LARGE');
   const chunks: Block[] = []; let group: Block | undefined;
@@ -76,8 +104,8 @@ export async function parseNativeDocument(filename: string, bytes: Buffer, optio
   for (const block of blocks) {
     const text = block.text.trim(); if (!text) continue;
     // Never combine separate sections, tables, code fences, pages or worksheets.
-    const sameScope = group && block.locator.block !== 'code' && ['positions', 'sheet', 'headings', 'block', 'table'].every(key => JSON.stringify(group!.locator[key]) === JSON.stringify(block.locator[key]));
-    if (group && sameScope && group.text.length + text.length + 1 <= 800) { group.text += '\n' + text; group.locator.end = block.locator; continue; }
+    const sameScope = group && block.locator.block !== 'code' && ['positions', 'sheet', 'headings', 'block', 'table','componentIndex'].every(key => JSON.stringify(group!.locator[key]) === JSON.stringify(block.locator[key]));
+    if (group && sameScope && group.text.length + text.length + 1 <= 800) { group.text += '\n' + text; group.locator.end = block.locator.end??block.locator; continue; }
     flush();
     for (let offset = 0; offset < text.length; offset += 720) {
       const chunk = { text: text.slice(offset, offset + 800), locator: { ...block.locator, offset } };

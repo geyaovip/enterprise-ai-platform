@@ -1,3 +1,8 @@
+import { RecordActions, ChoiceSelect } from '../components';
+import { BomTaskHistory } from './BomTaskHistory';
+import { usePagedArray } from '../hooks';
+import {AiIntakePanel} from '../components/AiIntakePanel';
+import {BomIntakePreview,bomSourceFacts,canAdoptBom,selectedBomGroup} from './BomIntakePreview';
 import { useState, useEffect, useRef } from "react";
 import { Routes, Route, Link, useParams, useNavigate } from "react-router-dom";
 import { useApiData } from "../hooks";
@@ -68,6 +73,7 @@ export function MesPage({
           <Route path="materials" element={<Materials />} />
           <Route path="boms" element={<Boms />} />
           <Route path="boms/new" element={<BomEditor />} />
+          <Route path="boms/tasks" element={<BomTaskHistory />} />
           <Route path="boms/:id/edit" element={<BomEditor />} />
           <Route path="boms/:id" element={<BomDetail />} />
           <Route path="plans" element={<Plans />} />
@@ -213,11 +219,11 @@ function Materials() {
               <td>{labels[m.kind]}</td>
               <td>{m.unit}</td>
               <td>{m.active ? "正常" : "停用"}</td>
-              <td>
+              <td><RecordActions>
                 {c.can("mes.material.write") && (
                   <button onClick={() => setEdit({ ...m })}>编辑</button>
                 )}
-              </td>
+              </RecordActions></td>
             </tr>
           ))}
         </Table>
@@ -318,9 +324,7 @@ function Boms() {
         title="BOM"
         action={
           c.can("mes.bom.write") && (
-            <Link className="button primary" to={c.prefix + "/boms/new"}>
-              新建BOM
-            </Link>
+            <div className="form-actions">{c.can("mes.ai.use")&&<Link className="button" to={c.prefix+"/boms/tasks"}>整理任务</Link>}<Link className="button primary" to={c.prefix + "/boms/new"}>新建BOM</Link></div>
           )
         }
       />
@@ -336,9 +340,9 @@ function Boms() {
                 <Status value={b.status} />
               </td>
               <td>{b.lines.length}</td>
-              <td>
+              <td><RecordActions>
                 <Link to={c.prefix + "/boms/" + b.id}>查看</Link>
-              </td>
+              </RecordActions></td>
             </tr>
           ))}
         </Table>
@@ -361,13 +365,22 @@ function BomEditor() {
       lines: [],
     }),
     [dirty, setDirty] = useState(false),
-    guard = useLeaveGuard(dirty);
+    [reviewDirty,setReviewDirty]=useState(false),
+    guard = useLeaveGuard(dirty||reviewDirty);
   useEffect(() => {
     if (d.data)
       setDraft({ ...d.data, lines: d.data.lines.map((l: any) => ({ ...l })) });
   }, [d.data]);
   const change = (v: any) => {
-    setDraft(v);
+    const sameUnit=(a:string,b:string)=>{const key=(x:string)=>['pcs','pc','ea','piece','pieces','件','个'].includes((x??'').toLowerCase())?'piece':(x??'').toLowerCase();return key(a)===key(b);};
+    const lines=v.lines.map((line:any)=>{
+      const previous=draft.lines.find((old:any)=>line.id?old.id===line.id:line.clientId?old.clientId===line.clientId:old===line);
+      if(!previous||!line.sourceEvidence)return line;
+      const productChanged=v.productId!==draft.productId,materialChanged=line.materialId!==previous.materialId;
+      if(!productChanged&&!materialChanged&&line.quantity===previous.quantity&&line.wastePercent===previous.wastePercent)return line;
+      return {...line,...(materialChanged&&!sameUnit(previous.unit,line.unit)?{quantity:''}:{}),sourceEvidence:{...line.sourceEvidence,hasConflict:true,factReviewed:false,...(productChanged||materialChanged?{historyMatch:undefined}:{} )}};
+    });
+    setDraft({...v,lines});
     setDirty(true);
   };
   if (!c.can("mes.bom.write")) return <Empty text="没有BOM编辑权限" />;
@@ -375,7 +388,7 @@ function BomEditor() {
     <>
       <PageTitle
         title={id ? "编辑BOM草稿" : "新建BOM草稿"}
-        action={<Link to={c.prefix + "/boms"}>返回BOM</Link>}
+        back={<Link to={c.prefix + "/boms"}>返回BOM</Link>}
       />
       <Notice text={d.error} />
       {a.notices}
@@ -394,6 +407,7 @@ function BomEditor() {
                   materialId: l.materialId,
                   quantity: l.quantity,
                   wastePercent: l.wastePercent,
+                  ...(l.sourceEvidence?{sourceEvidence:l.sourceEvidence}:{}),
                 })),
               },
             },
@@ -494,11 +508,12 @@ function BomEditor() {
               >
                 移除
               </button>
+              {l.sourceEvidence&&<div className="mes-source-review"><p>本次物料：{l.name||'待选择'}{l.unit?' · '+l.unit:''}</p><small>{l.sourceEvidence.filename}{l.sourceEvidence.page?` · 第${l.sourceEvidence.page}页`:''} · 来源行 {l.sourceEvidence.row}</small>{(l.sourceEvidence.hasConflict||l.sourceEvidence.historyMatch||l.sourceEvidence.quantityBasis||['ocr-cells','manual-source'].includes(l.sourceEvidence.method))&&<label className="check"><input type="checkbox" checked={Boolean(l.sourceEvidence.factReviewed)} onChange={e=>change({...draft,lines:draft.lines.map((v:any,i:number)=>i===n?{...v,sourceEvidence:{...v.sourceEvidence,factReviewed:e.target.checked,factReview:e.target.checked?{productId:draft.productId,materialId:v.materialId,quantity:v.quantity,unit:v.unit,...(v.sourceEvidence.selectedVariant?{selectedVariant:v.sourceEvidence.selectedVariant}:{})}:v.sourceEvidence.factReview}}:v)})}/>已重新核实组件{n+1}的物料、用量和适用产品</label>}</div>}
             </div>
           ))}
           <button
             type="button"
-            disabled={draft.lines.length >= 50}
+            disabled={draft.lines.length >= 200}
             onClick={() =>
               change({
                 ...draft,
@@ -525,13 +540,17 @@ function BomEditor() {
           </Field>
           <button
             className="primary"
-            disabled={!draft.lines.length}
+            disabled={!draft.lines.length||draft.lines.some((l:any)=>l.sourceEvidence&&(l.sourceEvidence.hasConflict||l.sourceEvidence.historyMatch||l.sourceEvidence.quantityBasis||['ocr-cells','manual-source'].includes(l.sourceEvidence.method))&&!l.sourceEvidence.factReviewed)}
             type="submit"
           >
             保存草稿
           </button>
         </fieldset>
       </form>
+      <AiIntakePanel<any> onReviewDirtyChange={setReviewDirty} key={c.tenantKey+(id??'new')} tenantKey={c.tenantKey} appId="mes" kind="bom" title="从图纸明细或资料整理BOM" placeholder={'可直接从Excel复制明细，或粘贴带表头的清单，例如：\n父件编码\t物料编码\t物料名称\t单件用量\t单位'} documentIntake productId={draft.productId||undefined} enabled={c.can('mes.material.read')} formStamp={JSON.stringify(draft)} hasValues={Boolean(draft.productId||draft.lines.length)}
+        canApply={r=>canAdoptBom(r,id?draft.productId:undefined)}
+        render={(r,update,source)=><BomIntakePreview result={r} update={update} documents={source.documents} currentProductId={id?draft.productId:undefined}/>}
+        onApply={r=>{const g=selectedBomGroup(r),lines=g.lines.filter((l:any)=>!l.excluded);change({...draft,...(!id?{productId:g.product.id,productName:g.product.name}:{}),lines:lines.map((l:any)=>({clientId:crypto.randomUUID(),materialId:l.material.id,name:l.material.name,unit:l.material.unit,quantity:l.quantity,wastePercent:l.wastePercent??'0',sourceEvidence:{...bomSourceFacts(l),filename:l.locator.filename,sha256:l.locator.sha256,page:l.locator.page,sheet:l.locator.sheet,table:l.locator.table,row:l.locator.row,method:l.locator.method,originalSku:l.sku,originalQuantity:l.sourceQuantity,originalUnit:l.sourceUnit,mpn:l.mpn,manufacturer:l.manufacturer,designators:l.designators,population:l.population,revision:l.revision,productCode:l.productCode,sourceObjectId:l.sourceObjectId,sourceDesignator:l.sourceDesignator,sourceDesignators:l.sourceDesignators,sourceUniqueId:l.sourceUniqueId,sourceHierarchy:l.sourceHierarchy,footprint:l.footprint,quantityBasis:l.quantityBasis,historyMatch:l.historyMatch,factReview:l.factReviewed?{productId:g.product.id,materialId:l.material.id,quantity:l.quantity,unit:l.material.unit,...(l.selectedVariant?{selectedVariant:l.selectedVariant}:{})}:undefined,reviewNote:l.reviewNote,...(l.locator.bbox&&l.locator.pageSize?{bbox:l.locator.bbox,pageSize:l.locator.pageSize}:{}),hasConflict:Boolean(l.conflict),factReviewed:Boolean(l.factReviewed),reviewed:true}})),note:[draft.note,...lines.map((l:any,n:number)=>`明细${n+1}：${l.sku||l.name} ${l.evidence}`)].filter(Boolean).join('；').slice(0,2000)});}}/>
       {guard.dialog}
     </>
   );
@@ -559,9 +578,8 @@ function BomDetail() {
     <>
       <PageTitle
         title={b ? `${b.productName} · BOM v${b.revision}` : "BOM详情"}
-        action={
-          <>
-            <Link to={c.prefix + "/boms"}>返回BOM</Link>
+        back={<Link to={c.prefix + "/boms"}>返回BOM</Link>} action={<>
+
             {b?.status === "draft" && c.can("mes.bom.write") && (
               <Link className="button" to={c.prefix + "/boms/" + id + "/edit"}>
                 编辑
@@ -578,6 +596,7 @@ function BomDetail() {
                         materialId: l.materialId,
                         quantity: l.quantity,
                         wastePercent: l.wastePercent,
+                        ...(l.sourceEvidence?{sourceEvidence:{...l.sourceEvidence,...(b.status==="published"&&l.sourceEvidence.historyMatch?{historyMatch:{bomId:b.id,revision:b.revision,version:b.version}}:{})}}:{}),
                       })),
                     },
                   });
@@ -596,8 +615,7 @@ function BomDetail() {
             <AiLink type="bom" id={id}>
               AI核查BOM
             </AiLink>
-          </>
-        }
+          </>}
       />
       {a.notices}
       <Result {...d}>
@@ -608,7 +626,7 @@ function BomDetail() {
                 <Status value={b.status} />
                 <span>{b.productSku}</span>
               </div>
-              <Table
+              <Table paginate
                 headers={["物料SKU", "物料", "单件用量", "单位", "损耗率"]}
               >
                 {b.lines.map((l: any) => (
@@ -722,8 +740,8 @@ function BomDetail() {
       </Result>
       <ConfirmDialog
         open={confirm}
-        title="发布此版BOM？"
-        description="同产品的上一发布版本将归档。已有计划保留原需求快照。"
+        confirmLabel="发布BOM" title="发布此版BOM？"
+        description="同产品的上一发布版本将归档，已有计划继续使用原版本。"
         busy={a.busy}
         onCancel={() => setConfirm(false)}
         onConfirm={async () => {
@@ -769,9 +787,9 @@ function Plans() {
               <td>
                 <Status value={p.status} />
               </td>
-              <td>
+              <td><RecordActions>
                 <Link to={c.prefix + "/plans/" + p.id}>查看</Link>
-              </td>
+              </RecordActions></td>
             </tr>
           ))}
         </Table>
@@ -783,7 +801,7 @@ function Plans() {
 }
 function Requirements({ items }: { items: any[] }) {
   return (
-    <Table headers={["物料SKU", "物料", "需求量", "单位"]}>
+    <Table paginate headers={["物料SKU", "物料", "需求量", "单位"]}>
       {items.map((l) => (
         <tr key={l.materialId}>
           <td>{l.sku}</td>
@@ -848,7 +866,7 @@ function PlanEditor() {
     <>
       <PageTitle
         title={id ? "编辑生产计划" : "新建生产计划"}
-        action={<Link to={c.prefix + "/plans"}>返回计划</Link>}
+        back={<Link to={c.prefix + "/plans"}>返回计划</Link>}
       />
       {a.notices}
       <Notice text={d.error ?? error} />
@@ -980,9 +998,8 @@ function PlanDetail() {
     <>
       <PageTitle
         title={p?.code ?? "计划详情"}
-        action={
-          <>
-            <Link to={c.prefix + "/plans"}>返回计划</Link>
+        back={<Link to={c.prefix + "/plans"}>返回计划</Link>} action={<>
+
             {p?.status === "draft" && c.can("mes.plan.write") && (
               <Link className="button" to={c.prefix + "/plans/" + id + "/edit"}>
                 编辑
@@ -1011,8 +1028,7 @@ function PlanDetail() {
             <AiLink type="plan" id={id}>
               分析计划
             </AiLink>
-          </>
-        }
+          </>}
       />
       {a.notices}
       <Result {...d}>
@@ -1048,10 +1064,10 @@ function PlanDetail() {
       </Result>
       <ConfirmDialog
         open={!!action}
-        title={action === "release" ? "发布计划？" : "取消计划？"}
+        confirmLabel={action === "release" ? "发布计划" : "取消计划"} title={action === "release" ? "发布计划？" : "取消计划？"}
         description={
           action === "release"
-            ? "发布后按已保存的BOM与需求快照执行，可以派发工单。"
+            ? "发布后按已核对的BOM与物料需求执行，可以派发工单。"
             : "取消后不能继续派工。"
         }
         busy={a.busy}
@@ -1121,24 +1137,17 @@ function PlanDetail() {
                 }
               />
             </Field>
-            <Field label="受派人">
-              <select
-                required
+            <ChoiceSelect label="受派人" required
                 value={form.assigneeId}
                 onChange={(e) =>
                   setForm({ ...form, assigneeId: e.target.value })
-                }
-              >
-                <option value="">请选择</option>
-                {members.data
+                }><option value="">请选择</option>{members.data
                   ?.filter((m) => ["admin", "operator"].includes(m.role))
                   .map((m) => (
                     <option value={m.id} key={m.id}>
                       {m.name}
                     </option>
-                  ))}
-              </select>
-            </Field>
+                  ))}</ChoiceSelect>
           </div>
           <DialogAction>
             <button className="primary" type="submit" disabled={a.busy}>
@@ -1178,9 +1187,17 @@ function OrderRows({ items, members }: { items: any[]; members: any[] }) {
           <td>
             <Status value={o.status} />
           </td>
-          <td>
-            <Link to={c.prefix + "/orders/" + o.id}>查看</Link>
-          </td>
+          <td><RecordActions>
+            <Link to={c.prefix + "/orders/" + o.id}>
+              {o.assigneeId === c.meta.membershipId && c.can("mes.report.write")
+                ? o.status === "in_progress"
+                  ? "去报工"
+                  : o.status === "ready"
+                    ? "去开工"
+                    : "查看"
+                : "查看"}
+            </Link>
+          </RecordActions></td>
         </tr>
       ))}
     </Table>
@@ -1199,7 +1216,14 @@ function Orders() {
       {d.filters}
       <Result {...d}>
         <OrderRows items={d.data?.items ?? []} members={members.data ?? []} />
-        {!d.data?.items.length && <Empty text="暂无工单" />}
+        {!d.data?.items.length && (
+          <Empty
+            text="暂无符合条件的工单"
+            action={c.meta.ownOnly && d.status === "in_progress" ? (
+              <Link to={c.prefix + "/orders?status=ready"}>查看待开工工单</Link>
+            ) : undefined}
+          />
+        )}
         {d.pager}
       </Result>
     </>
@@ -1212,16 +1236,18 @@ function OrderDetail() {
     a = useAction(),
     [action, setAction] = useState(""),
     [report, setReport] = useState(false),
-    [form, setForm] = useState({ goodQty: 0, defectQty: 0, note: "" }),
+    [form, setForm] = useState({ goodQty: "0", defectQty: "0", note: "" }),
     o = d.data,
-    own = o?.assigneeId === c.meta.membershipId;
+    own = o?.assigneeId === c.meta.membershipId,
+    pendingQty = (o?.reports ?? []).filter((r: any) => r.status === "pending").reduce((n: number, r: any) => n + r.goodQty + r.defectQty, 0),
+    remainingQty = Math.max(0, (o?.targetQty ?? 0) - (o?.goodQty ?? 0) - (o?.defectQty ?? 0) - pendingQty),
+    validReport = form.goodQty !== "" && form.defectQty !== "" && [form.goodQty, form.defectQty].every(q => Number.isInteger(Number(q)) && Number(q) >= 0) && Number(form.goodQty) + Number(form.defectQty) > 0 && Number(form.goodQty) + Number(form.defectQty) <= remainingQty;
   return (
     <>
       <PageTitle
         title={o?.code ?? "工单详情"}
-        action={
-          <>
-            <Link to={c.prefix + "/orders"}>返回工单</Link>
+        back={<Link to={c.prefix + "/orders"}>返回工单</Link>} action={<>
+
             {own && o?.status === "ready" && c.can("mes.report.write") && (
               <button className="primary" onClick={() => setAction("start")}>
                 开工
@@ -1230,8 +1256,8 @@ function OrderDetail() {
             {own &&
               o?.status === "in_progress" &&
               c.can("mes.report.write") && (
-                <button className="primary" onClick={() => setReport(true)}>
-                  提交报工
+                <button className="primary" disabled={remainingQty === 0} title={remainingQty === 0 ? "已有报工占满计划量，请等待审核结果" : undefined} onClick={() => setReport(true)}>
+                  {remainingQty === 0 ? "等待报工审核" : "提交报工"}
                 </button>
               )}
             {["ready", "in_progress"].includes(o?.status) &&
@@ -1242,8 +1268,7 @@ function OrderDetail() {
             <AiLink type="order" id={id}>
               分析工单
             </AiLink>
-          </>
-        }
+          </>}
       />
       {a.notices}
       <Result {...d}>
@@ -1278,7 +1303,7 @@ function OrderDetail() {
       </Result>
       <ConfirmDialog
         open={!!action}
-        title={action === "start" ? "开始此工单？" : "取消此工单？"}
+        confirmLabel={action === "start" ? "开始工单" : "取消工单"} title={action === "start" ? "开始此工单？" : "取消此工单？"}
         description={
           action === "start"
             ? "开工后可以提交分批报工。"
@@ -1308,19 +1333,23 @@ function OrderDetail() {
         <form
           onSubmit={async (e) => {
             e.preventDefault();
+            if (!validReport) return;
             if (
               await a.write(c.base + "/orders/" + id + "/reports", {
                 version: o.version,
                 ...form,
+                goodQty: Number(form.goodQty),
+                defectQty: Number(form.defectQty),
               })
             ) {
               setReport(false);
-              setForm({ goodQty: 0, defectQty: 0, note: "" });
+              setForm({ goodQty: "0", defectQty: "0", note: "" });
               await d.reload();
             }
           }}
         >
           {a.notices}
+          <p className="muted">剩余可报 {remainingQty} 件 · 待审核 {pendingQty} 件</p>
           <div className="form-grid">
             {(["goodQty", "defectQty"] as const).map((k) => (
               <Field
@@ -1331,11 +1360,11 @@ function OrderDetail() {
                   required
                   type="number"
                   min={0}
-                  max={o?.targetQty ?? 10000000}
+                  max={remainingQty}
                   step={1}
                   value={form[k]}
                   onChange={(e) =>
-                    setForm({ ...form, [k]: Number(e.target.value) })
+                    setForm({ ...form, [k]: e.target.value })
                   }
                 />
               </Field>
@@ -1352,7 +1381,7 @@ function OrderDetail() {
             <button
               className="primary"
               type="submit"
-              disabled={a.busy || form.goodQty + form.defectQty <= 0}
+              disabled={a.busy || !validReport}
             >
               提交审核
             </button>
@@ -1396,9 +1425,9 @@ function ReportRows({
               {members.data?.find((m) => m.id === r.reporterId)?.name ??
                 "已离职成员"}
             </td>
-            <td>
+            <td><RecordActions>
               <Link to={c.prefix + "/orders/" + r.orderId}>查看工单</Link>
-            </td>
+            </RecordActions></td>
             <td>{r.goodQty}</td>
             <td>{r.defectQty}</td>
             <td>
@@ -1408,7 +1437,7 @@ function ReportRows({
             <td>
               <Status value={r.status} />
             </td>
-            <td>
+            <td><RecordActions>
               {r.status === "pending" &&
                 r.reporterId !== c.meta.membershipId &&
                 c.can("mes.report.review") && (
@@ -1431,7 +1460,7 @@ function ReportRows({
                     </button>
                   </div>
                 )}
-            </td>
+            </RecordActions></td>
           </tr>
         ))}
       </Table>
@@ -1482,15 +1511,26 @@ function ReportRows({
   );
 }
 function Reports() {
-  const d = useList("reports"),
-    c = useMes();
+  const c = useMes(),
+    d = useList("reports", {
+      defaultStatus: c.can("mes.report.review") ? "pending" : "",
+    });
   return (
     <>
-      <PageTitle title={c.meta.ownOnly ? "我的报工" : "报工与审核"} />
+      <PageTitle
+        title={c.meta.ownOnly ? "我的报工" : "报工与审核"}
+        action={c.meta.ownOnly && c.can("mes.report.write") ? (
+          <Link className="button primary" to={c.prefix + "/orders?status=in_progress"}>
+            去报工
+          </Link>
+        ) : undefined}
+      />
       {d.filters}
       <Result {...d}>
         <ReportRows items={d.data?.items ?? []} onReviewed={d.reload} />
-        {!d.data?.items.length && <Empty text="暂无报工记录" />}
+        {!d.data?.items.length && (
+          <Empty text={d.status === "pending" ? "暂无符合条件的待审核报工" : "暂无符合条件的报工记录"} />
+        )}
         {d.pager}
       </Result>
     </>
@@ -1511,7 +1551,7 @@ function Settings() {
       <Result {...d}>
         <section className="panel form-panel">
           <h2>成员岗位</h2>
-          <Table headers={["成员", "MES岗位", "操作"]}>
+          <Table paginate headers={["成员", "MES岗位", "操作"]}>
             {d.data?.map((m) => (
               <tr key={m.id}>
                 <td>{m.user.name}</td>
@@ -1522,7 +1562,7 @@ function Settings() {
                     ]
                   }
                 </td>
-                <td>
+                <td><RecordActions>
                   {m.role !== "admin" && (
                     <button
                       onClick={() =>
@@ -1538,7 +1578,7 @@ function Settings() {
                       授权
                     </button>
                   )}
-                </td>
+                </RecordActions></td>
               </tr>
             ))}
           </Table>
@@ -1596,13 +1636,13 @@ function Settings() {
 }
 function Audit() {
   const c = useMes(),
-    d = useApiData<any[]>(c.can("mes.audit.read") ? c.base + "/audit" : null);
+    d = usePagedArray<any>(c.can("mes.audit.read") ? c.base + "/audit" : null);
   if (!c.can("mes.audit.read")) return <Empty text="没有MES审计权限" />;
   return (
     <>
       <PageTitle title="MES审计记录" />
       <Result {...d}>
-        <Table headers={["时间", "操作", "对象类型", "对象ID"]}>
+        <Table pagination={d.pagination} headers={["时间", "操作", "对象类型", "对象ID"]}>
           {d.data?.map((e) => (
             <tr key={e.id}>
               <td>{date(e.createdAt)}</td>

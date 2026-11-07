@@ -1,6 +1,7 @@
 import { brandMarks, brandSvg, type BrandId } from '../packages/frontend/src/brand-marks';
+import { appearanceBootstrap, appearanceCriticalCss } from '../packages/frontend/src/appearance-bootstrap';
 export function brandingPlugin() {
-  return {name:'suite-brand-assets',configureServer(server:any){server.middlewares.use((req:any,res:any,next:()=>void)=>{
+  return {name:'suite-brand-assets',transformIndexHtml(){return [{tag:'style',attrs:{'data-appearance-critical':''},children:appearanceCriticalCss,injectTo:'head-prepend' as const},{tag:'script',attrs:{'data-appearance-init':''},children:appearanceBootstrap,injectTo:'head-prepend' as const}];},configureServer(server:any){server.middlewares.use((req:any,res:any,next:()=>void)=>{
     const path=(req.url??'').split('?')[0],match=path.match(/^\/brand\/(ark|erp|crm|mes)(?:-(mono|inverse))?\.svg$/);
     if(path!=='/favicon.svg'&&!match)return next();
     res.setHeader('Content-Type','image/svg+xml');res.end(brandSvg((match?.[1]??'ark') as BrandId,(match?.[2]??'color') as 'color'|'mono'|'inverse'));

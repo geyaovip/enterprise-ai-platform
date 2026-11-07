@@ -29,7 +29,7 @@ async function parserChecks() {
   await assert.rejects(() => command(process.env.KNOWLEDGE_PYTHON_PATH ?? 'python3', ['-c', 'import os, signal; print("partial OCR text", flush=True); os.kill(os.getpid(), signal.SIGTERM)'], Buffer.alloc(0)), e => e.code === 'DOCUMENT_INVALID');
   const fixture = images(); const before = (await readdir(tmpdir())).filter(x => x.startsWith('suite-ocr-'));
   for (const [kind, filename] of [['png', 'scan.png'], ['jpeg', 'scan.jpg'], ['pdf', 'scan.pdf']]) {
-    const chunks = await parseNativeDocument(filename, fixture[kind]);
+    const chunks = await parseNativeDocument(filename, fixture[kind]).catch(error=>{error.message=filename+': '+error.message;throw error;});
     assert.ok(chunks.some(c => c.text.includes('24680')), JSON.stringify(chunks));
     assert.equal(chunks[0].locator.ocr, true); assert.equal(chunks[0].locator.ocrProvider, 'tesseract');
     if (kind === 'pdf') assert.equal(chunks[0].locator.positions[0][0], 1);

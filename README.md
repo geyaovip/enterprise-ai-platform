@@ -1,42 +1,40 @@
 # 知行方舟 · 企业 AI 应用平台
 
-以 ERP、电商 CRM、MES 为业务应用，共享账号、企业、权限、知识、审计和受控 AI 执行能力。一个 Monorepo，三个独立前端，一个模块化 API、PostgreSQL 数据库和异步 Worker。
+知行方舟把企业知识、业务应用和数字员工接入同一个工作台。团队可以用 ERP 管理进销存，用 CRM 跟进客户，用 MES 管理生产，用品牌内容创作素材，也可以用 GEO 分析品牌在 AI 回答中的可见度。五个应用共用企业账号、岗位权限、任务、通知和审计。
 
-[总官网](https://zhixingark.cn) · [产品中心](https://zhixingark.cn/products) · [登录工作区](https://zhixingark.cn/login) · [品牌标识](https://zhixingark.cn/brand/identity.html)
+[官网](https://zhixingark.cn) · [工作场景](https://zhixingark.cn/solutions) · [数字员工](https://zhixingark.cn/employees) · [登录工作台](https://zhixingark.cn/login)
 
-## 应用与当前范围
+## 应用与数字员工
 
-| 应用 | 已实现的业务范围 | 产品官网 |
+| 应用 | 主要功能 | 数字员工 |
 | --- | --- | --- |
-| ERP 进销存 | 客户与商机、采购、销售合同、出入库、调拨、应收应付、收款认领、开票及岗位协作 | [ERP](https://zhixingark.cn/products/erp) |
-| 电商 CRM | 客户与交易导入、购买/复购指标、标签与分群、人工运营任务、效果观察和审计 | [CRM](https://zhixingark.cn/products/crm) |
-| MES 制造执行 | 物料、BOM 版本、多级需求展开、生产计划、工单、分批报工和审核 | [MES](https://zhixingark.cn/products/mes) |
+| [ERP 进销存](https://zhixingark.cn/products#erp) | 采购、销售、出入库、调拨、应收应付 | ERP 管家 |
+| [客户 CRM](https://zhixingark.cn/products#crm) | 线索、客户、商机、跟进、客户分群、服务与续约 | CRM 运营官 |
+| [MES 制造执行](https://zhixingark.cn/products#mes) | 图纸与 BOM 核查、生产计划、工单、报工审核 | MES 生产官 |
+| [品牌内容](https://zhixingark.cn/products#content) | 图片与视频工作流、参考素材、画布、生成记录和下载 | 品牌内容创作官 |
+| [GEO 品牌可见度](https://zhixingark.cn/products#geo) | 多模型分析、品牌与竞品对比、回答与引用证据、PDF 报告、定期监测和同条件复测 | GEO 品牌分析官 |
 
-ERP 与 MES 提供受控 AI 助手，具体可用性取决于企业开通、成员权限、模型和运行环境。AI 从授权业务事实查询、分析并准备提案，业务写入需确认；发布、派工、报工和审核继续遵守业务规则。**当前生产 CRM AI 闸门关闭**，人工客户经营功能可用。
+GEO 按企业开通。获授权的成员可以在报告中点「解读报告」，让品牌分析官基于当前报告解释品牌提及、竞品缺席和引用证据，并准备复测。批量分析与复测由用户在 GEO 页面确认费用。平台 GEO 从新数据开始。 [GEO 接入与权限](docs/geo/01-接口权限与状态.md) · [GEO 品牌分析官](docs/158-GEO品牌分析官.md)
 
-账号使用系统内注册和密码登录；首次登录后创建企业，或通过邀请加入已有企业。工作台、企业管理端和平台运营端共用一套 UI 与品牌规范。
+应用内 AI 按企业、岗位和业务对象鉴权。涉及业务写入的提议需要人工确认，执行结果以业务回执为准。模型生成能力取决于企业开通与模型配置。 [AI 能力与业务规范](docs/11-AI能力与业务嵌入规范.md)
 
-## 架构与目录
+## 项目结构
 
-| 路径 | 职责 |
+三个 React/Vite 前端连接同一个模块化 NestJS API。PostgreSQL 保存平台和业务数据，独立 Worker 执行异步任务。Cloudflare 提供官网和各前端入口，API、Worker、数据库与受管 OpenClaw Runtime 部署在平台服务器上。
+
+| 目录 | 内容 |
 | --- | --- |
-| `apps/web` | 静态官网、登录与企业业务工作台 |
-| `apps/admin` | 企业组织、成员、应用交付、知识及订阅管理 |
-| `apps/platform-admin` | 平台企业管理、运行与用量、运营审计 |
-| `apps/api` | NestJS API、异步 Worker、Prisma 模型、迁移和领域测试 |
-| `packages/frontend` | 三端共享 UI、账号、通知、AI 对话和品牌标识 |
-| `cloudflare` | 总入口、独立前端路由和同源 API 转发 |
-| `infrastructure` | Docker、Runtime Manager、OpenClaw/memory-core 适配、备份与部署 |
-| `docs` | 产品契约、公共规范、实施与验收记录 |
-
-- 企业、应用、成员及对象范围由服务端逐请求校验；前端菜单不作为权限依据。
-- 各应用拥有自己的业务数据和规则，跨应用经公开契约协作。
-- 平台保存会话历史、授权、原文和版本，OpenClaw 承接受控执行及摘要/记忆能力。
-- AI 模型请求与重试有计量、预算和上下文限制；真实模型测试与普通回归分开执行。
+| `apps/web` | 官网、登录、企业工作台和五个应用 |
+| `apps/admin`、`apps/platform-admin` | 企业管理端与平台运营端 |
+| `apps/api` | API、Worker、应用模块、Prisma 模型和迁移 |
+| `packages/frontend` | 共享 UI、账号、通知、AI 对话和品牌组件 |
+| `cloudflare` | 路由、前端服务绑定和同源 API 转发 |
+| `infrastructure` | 开发与部署模板、Runtime Manager、备份与检查脚本 |
+| `docs` | 架构、产品与接口契约、验证和版本记录 |
 
 ## 本地开发
 
-需要 Node.js **24.21.0**（见 [.nvmrc](.nvmrc)）、pnpm **11.19.0**、PostgreSQL 17；Docker 可用于启动独立开发数据库。CRM 文件导入和知识解析需要 Python 3，PDF/OCR 另需 Poppler、Tesseract，依赖以 [Dockerfile](infrastructure/Dockerfile.api) 为准。
+需要 Node.js **24.21.0**、pnpm **11.19.0** 和 PostgreSQL 17。下面使用 Docker 创建本地数据库，默认端口为 `54329`。
 
 ```sh
 git clone https://github.com/geyaovip/enterprise-ai-platform.git
@@ -46,61 +44,40 @@ cp .env.example apps/api/.env
 pnpm install --frozen-lockfile
 ```
 
-填写两份本地环境文件：数据库密码与 `DATABASE_URL` 保持一致，为 `AI_ENCRYPTION_KEY`、`CHANNEL_ENCRYPTION_KEY` 配置独立随机值。使用独立开发库，不复制生产配置。开发数据库示例默认绑定 `127.0.0.1:54329`：
+配置两个环境文件，让 `DATABASE_URL` 使用本地数据库的密码。为 `AI_ENCRYPTION_KEY`、`CHANNEL_ENCRYPTION_KEY` 和 `AUTH_EMAIL_SECRET` 生成各自的随机值。要体验邮箱验证码登录，还需填写 Resend 发件配置和适用于本地环境的 Turnstile 配置。变量见 [开发模板](.env.example) 和 [运行手册](infrastructure/README.md)。
 
 ```sh
-# compose.yaml 使用本地已有镜像，首次需要先拉取
 docker pull postgres:17-alpine
 docker compose --env-file .env -f infrastructure/compose.yaml up -d postgres
 pnpm db:deploy
 ```
 
-分别在独立终端运行：
+在各自终端运行所需服务。
 
 ```sh
 pnpm dev:api               # API，4600
 pnpm dev:web               # 工作台，4601
-pnpm dev:admin             # 企业管理，4603
-pnpm dev:platform-admin    # 平台运营，4604
+pnpm dev:admin             # 企业管理端，4603
+pnpm dev:platform-admin    # 平台运营端，4604
 ```
 
-异步任务另运行 `pnpm --filter @suite/api start:worker`；先构建 API，再启动 Worker。普通注册不会授予平台运营权限，也不会自动提供模型凭据。初始化与 Runtime 配置见[部署联调说明](docs/25-首阶段组件部署与联调.md)和[运行手册](infrastructure/README.md)。
+API 构建后，可运行 `pnpm --filter @suite/api start:worker` 启动异步任务。知识解析、媒体处理和 GEO PDF 的系统依赖见 [API Dockerfile](infrastructure/Dockerfile.api)。部署自己的实例时，根据 [生产环境模板](.env.production.example) 配置域名、数据库和凭据，并替换 Wrangler 中的 Cloudflare 账号及服务绑定。
 
 ## 构建与检查
 
 ```sh
 pnpm typecheck
-pnpm build
+pnpm --filter @suite/api build
 pnpm build:cloud
 pnpm test:seo
 ```
 
-`build:cloud` 按正式基路径生成三个前端，并保留前一版哈希资源供已打开的客户端加载。SEO 检查覆盖公开 HTML、结构化数据、正式域名、robots/sitemap、图片索引、重定向及 404。仓库 CI 执行安装、类型检查、构建与 SEO 回归，不运行数据库写入或付费模型测试。
+GitHub Actions 执行锁定依赖安装、类型检查、API 与三前端构建、官网路由及 SEO 检查。生产发布由独立流程执行。业务和权限用例位于 `apps/api/tests`，数据库回归使用独立测试库，真实模型调用单独验证。 [开发与测试规范](docs/06-开发与测试规范.md)
 
-业务、权限和 AI 用例在 `apps/api/tests`，具体命令及验收条件见[测试规范](docs/06-开发与测试规范.md)。数据库测试只连接隔离测试库；真实模型测试需单独配置、设置预算并确认授权。
+## 文档入口
 
-## 发布与官网
+- [总体架构与数据安全](docs/03-架构与数据安全.md) · [应用接入契约](docs/10-应用接入契约.md) · [公共 UI 规范](docs/ui/00-公共UI规范.md)
+- [ERP](docs/17-ERP功能追踪矩阵.md) · [CRM](docs/crm/00-文档索引与决策.md) · [MES](docs/mes/00-文档索引.md) · [品牌内容](docs/content/01-产品与功能.md) · [GEO](docs/geo/00-原生接入方案.md)
+- [项目现状](docs/47-项目现状与文档维护.md) · [GEO 上线记录](docs/154-GEO官网与生产上线.md) · [官网访客流程](docs/157-官网访客流程走查与修正.md) · [完整文档索引](docs/00-文档索引与决策记录.md)
 
-正式来源为 **[https://zhixingark.cn](https://zhixingark.cn)**。官网、ERP/CRM/MES、两个管理端和 API 共用此来源；应用官网分别位于 `/products/erp`、`/products/crm`、`/products/mes`。
-
-Cloudflare 使用一个入口 Worker 和三个前端 Service Binding；API/Worker、PostgreSQL 和受控 Runtime 在独立服务端运行。`wrangler*.jsonc` 是本项目的部署配置；部署自己的实例前，需替换账号、Worker 名称、域名与绑定，并通过受控配置提供后端地址和凭据。
-
-- [品牌与正式域名](docs/59-品牌官网与正式域名发布.md)
-- [官网代码 SEO 与验收边界](docs/60-官网代码SEO优化与发布.md)
-- [生产环境模板](.env.production.example)与[运行手册](infrastructure/README.md)
-
-本仓库提供源码、迁移、配置模板及文档，不包含生产密钥、数据库、上传原件、运行会话、私有验收数据或部署备份。旧三应用是独立工作区和仓库，本次同步不修改它们。
-
-## 文档与验收边界
-
-| 主题 | 入口 |
-| --- | --- |
-| 项目当前状态与已知限制 | [47 项目现状](docs/47-项目现状与文档维护.md) |
-| 规则、授权和决策 | [AGENTS.md](AGENTS.md)、[文档索引](docs/00-文档索引与决策记录.md) |
-| 公共 UI、AI 交互与品牌 | [公共 UI 索引](docs/ui/00-公共UI规范.md) |
-| ERP 功能及覆盖 | [ERP 追踪矩阵](docs/17-ERP功能追踪矩阵.md) |
-| 电商 CRM | [CRM 文档](docs/crm/00-文档索引与决策.md) |
-| MES 与真实模型代表题集 | [MES 文档](docs/mes/00-文档索引.md)、[MES 发布记录](docs/mes/06-真实模型验收与线上发布.md) |
-| AI 记忆与用量治理 | [记忆分层](docs/50-AI分层记忆与上下文.md)、[用量治理](docs/57-AI用量治理与Evolving复测.md) |
-
-历史记录中的本机/服务器路径、截图和私有 JSON 是当时的验收位置，不一定随仓库分发。构建、隔离测试、真实模型代表题集、生产演示和客户验收分别记录；当前代码与上线记录不代表全部行业场景、容量或客户业务已验收。设备采集、自动排程、ERP/MES 库存对接和 CRM 自动群发等不在当前交付范围。
+公开仓库包含平台源码、迁移、配置模板和技术文档。文档中的内部验收记录、截图和生产备份由运维环境保存。

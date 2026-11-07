@@ -1,3 +1,4 @@
+import { RecordActions, DataResult } from '../components';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { erpApi } from '../api';
@@ -34,9 +35,9 @@ export function WorkItemsPage({ tenantKey }: { tenantKey: string }) {
       <Field label="事项类型"><select value={kind} onChange={e => { setKind(e.target.value); setPage(1); }}>{kinds.filter(([id]) => id === 'all' || id === kind || !data || data.counts[id] > 0).map(([id, title]) => <option key={id} value={id}>{title}{id !== 'all' ? ` (${data?.counts[id] ?? 0})` : ''}</option>)}</select></Field>
       <Field label="搜索事项"><input maxLength={100} value={search} onChange={e => setSearch(e.target.value)} placeholder="事项、单号或业务对象" /></Field><button>查询</button>
     </form>
-    <Notice text={error} />
+
     <section className="panel table-wrap">
-      {loading ? <Loading /> : !data?.items.length ? <Empty text="当前没有需要你处理的事项。" /> : <table><thead><tr><th>事项</th><th>业务对象</th><th>产生时间 / 截止时间</th><th>处理</th></tr></thead><tbody>{data.items.map(item => <tr key={item.id}><td>{item.title}</td><td>{item.detail}</td><td>{new Date(item.dueAt ?? item.createdAt).toLocaleString('zh-CN')}{item.dueAt && <small className="subline">{new Date(item.dueAt) <= new Date() ? '已到期' : '截止时间'}</small>}</td><td><Link className="button" to={href(item)}>查看并处理</Link></td></tr>)}</tbody></table>}
+      {<DataResult data={data} loading={loading} error={error} reload={reload}>{!data?.items.length ? <Empty text="当前没有需要你处理的事项。" /> : <table><thead><tr><th>事项</th><th>业务对象</th><th>产生时间 / 截止时间</th><th>处理</th></tr></thead><tbody>{data.items.map(item => <tr key={item.id}><td>{item.title}</td><td>{item.detail}</td><td>{new Date(item.dueAt ?? item.createdAt).toLocaleString('zh-CN')}{item.dueAt && <small className="subline">{new Date(item.dueAt) <= new Date() ? '已到期' : '截止时间'}</small>}</td><td><RecordActions><Link className="button" to={href(item)}>查看并处理</Link></RecordActions></td></tr>)}</tbody></table>}</DataResult>}
       {data && <Pager page={page} total={data.total} size={data.page_size} onPage={setPage} />}
     </section>
   </>;

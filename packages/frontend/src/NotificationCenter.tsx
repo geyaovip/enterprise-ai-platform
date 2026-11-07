@@ -1,12 +1,13 @@
+import { ChoiceSelect } from './components';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Bell, ArrowLeft, ArrowUpRight, Check, RefreshCw, ChevronRight } from 'lucide-react';
 import { api, erpApi, tenantApi, errorText, ApiError } from './api';
 import { Dialog, Empty, Loading, Notice, Pager } from './components';
-import type { TenantMembership, TenantApp, Page } from './types';
+import type { TenantMembership, Page } from './types';
 
 type Notification = { id: string; title: string; body: string; dedupeKey: string; readAt: string | null; createdAt: string; workflowStatus?:string;kind?:string;resourceId?:string;appId?:string;relatedResource?:{type:string;id:string} };
-type NotificationPage = Page<Notification> & { unread: number };
+type NotificationPage = Page<Notification> & { unread: number; readThrough: string };
 type Summary = { enabled: boolean; unread: number };
 const pageSize = 20;
 export const notificationChangedEvent = 'suite:notifications-changed';
@@ -15,6 +16,9 @@ export const notificationChangedEvent = 'suite:notifications-changed';
 export function notificationDestination(item: Notification, tenantKey: string, workspace: string) {
   const base = `${workspace}/t/${encodeURIComponent(tenantKey)}/erp`;
   const uuidResource=/^[0-9a-f-]{36}$/i.test(item.resourceId??'')?item.resourceId:null;
+  if(item.appId==='geo'&&uuidResource)return item.kind==='conversation'?`${workspace}/t/${encodeURIComponent(tenantKey)}/geo/ai?conversation=${uuidResource}`:item.kind==='geo-monitor'?`${workspace}/t/${encodeURIComponent(tenantKey)}/geo/projects/${uuidResource}/schedules`:`${workspace}/t/${encodeURIComponent(tenantKey)}/geo/analyses?task=${uuidResource}`;
+  if(item.appId==='content'&&uuidResource)return `${workspace}/t/${encodeURIComponent(tenantKey)}/content/${item.kind==='conversation'?'ai?conversation=':'projects/'}${uuidResource}`;
+  if(item.appId==='mes'&&item.kind==='mes-bom'&&uuidResource)return `${workspace}/t/${encodeURIComponent(tenantKey)}/mes/boms/new?bomTask=${uuidResource}`;
   if(item.kind==='conversation'&&uuidResource&&['tenant_admin','platform_admin'].includes(item.appId??''))return `${workspace}/t/${encodeURIComponent(tenantKey)}/${item.appId==='tenant_admin'?'management-ai':'platform-ai'}?conversation=${uuidResource}`;
   if(item.appId==='crm'&&uuidResource&&['crm-task','crm-import','conversation'].includes(item.kind??''))return `${workspace}/t/${encodeURIComponent(tenantKey)}/crm/${item.kind==='crm-task'?'tasks/':item.kind==='crm-import'?'imports/':'ai?conversation='}${uuidResource}`;
   if(item.kind==='conversation'&&uuidResource)return `${workspace}/t/${encodeURIComponent(tenantKey)}/erp/ai?conversation=${uuidResource}`;
@@ -53,6 +57,8 @@ export function NotificationCenter({ memberships, workspaceUrl = '', closeKey, o
   const [open, setOpen] = useState(false);
   const [tenantKey, setTenantKey] = useState(sources[0]?.tenant.slug ?? '');
   const [page, setPage] = useState(1);
+  const [filter, setFilter] = useState<'all' | 'unread'>('all');
+  const readLock = useRef(false);
   const [summaries, setSummaries] = useState<Record<string, Summary>>({});
   const [summaryError, setSummaryError] = useState('');
   const [data, setData] = useState<NotificationPage | null>(null);
@@ -71,9 +77,8 @@ export function NotificationCenter({ memberships, workspaceUrl = '', closeKey, o
   const refreshSummary = useCallback(async () => {
     const version = ++summaryVersion.current;
     const results = await Promise.allSettled(sources.map(async source => {
-      const apps = await api.get<TenantApp[]>(tenantApi(source.tenant.slug, '/apps'));
-      const enabled = source.role === 'admin' || apps.some(app => app.granted && app.enabled);
-      const result = enabled ? await api.get<NotificationPage>(tenantApi(source.tenant.slug, '/notifications?page_size=1')) : null;
+      const result = await api.get<NotificationPage>(tenantApi(source.tenant.slug, '/notifications?page_size=1'));
+      const enabled = true;
       return { key: source.tenant.slug, enabled, unread: result?.unread ?? 0 };
     }));
     if (version !== summaryVersion.current) return;
@@ -94,21 +99,14 @@ export function NotificationCenter({ memberships, workspaceUrl = '', closeKey, o
     const version = ++listVersion.current;
     setLoading(true); setError(''); setData(null);
     try {
-      const apps = await api.get<TenantApp[]>(tenantApi(tenantKey, '/apps'));
-      if (!apps.some(app => app.enabled && app.granted)) {
-        if (version === listVersion.current) {
-          setData({ items: [], total: 0, unread: 0, page: 1, page_size: pageSize });
-          setSummaries(previous => ({ ...previous, [tenantKey]: { enabled: false, unread: 0 } }));
-        }
-        return;
-      }
-      const result = await api.get<NotificationPage>(tenantApi(tenantKey, `/notifications?page=${page}&page_size=${pageSize}`));
+      const result = await api.get<NotificationPage>(tenantApi(tenantKey, `/notifications?page=${page}&page_size=${pageSize}&status=${filter}`));
       if (version !== listVersion.current) return;
+      if (page > 1 && !result.items.length && result.total <= (page - 1) * pageSize) { setPage(Math.max(1, Math.ceil(result.total / pageSize))); return; }
       setData(result);
       setSummaries(previous => ({ ...previous, [tenantKey]: { enabled: true, unread: result.unread } }));
     } catch (e) { if (version === listVersion.current) setError(errorText(e)); }
     finally { if (version === listVersion.current) setLoading(false); }
-  }, [tenantKey, page]);
+  }, [tenantKey, page, filter]);
 
   useEffect(() => {
     setSummaries({}); setTenantKey(sources[0]?.tenant.slug ?? '');
@@ -147,7 +145,8 @@ export function NotificationCenter({ memberships, workspaceUrl = '', closeKey, o
   }, [open, loadList]);
 
   const read = async (item: Notification) => {
-    if (item.readAt || reading) return;
+    if (item.readAt || readLock.current) return;
+    readLock.current = true;
     const version = ++readVersion.current;
     setReading(item.id); setError('');
     try {
@@ -158,11 +157,26 @@ export function NotificationCenter({ memberships, workspaceUrl = '', closeKey, o
       setData(previous => previous ? { ...previous, unread: Math.max(0, previous.unread - 1), items: previous.items.map(n => n.id === item.id ? { ...n, readAt } : n) } : previous);
       setDetail(previous => previous?.id === item.id ? { ...previous, readAt } : previous);
     } catch (e) { if (version === readVersion.current) setError(errorText(e)); }
-    finally { if (version === readVersion.current) setReading(''); }
+    finally { readLock.current = false; if (version === readVersion.current) setReading(''); }
+  };
+  const readAll = async () => {
+    if (readLock.current || !data?.unread || !data.readThrough) return;
+    readLock.current = true;
+    const version = ++readVersion.current;
+    const target = tenantKey;
+    setReading('all'); setError('');
+    try {
+      await api.post(tenantApi(target, '/notifications/read-all'), { through: data.readThrough });
+      if (version !== readVersion.current) return;
+      setPage(1);
+      await Promise.all([loadList(), refreshSummary()]);
+      window.dispatchEvent(new Event(notificationChangedEvent));
+    } catch (e) { if (version === readVersion.current) setError(errorText(e)); }
+    finally { readLock.current = false; if (version === readVersion.current) setReading(''); }
   };
   const close = () => { setOpen(false); setDetail(null); ++readVersion.current; setReading(''); };
   return <>
-    <button type="button" className="notification-trigger" aria-label={`通知${unread ? `，${unread} 条未读` : ''}${summaryError ? '，暂时无法更新' : ''}`} title="通知" aria-haspopup="dialog" onClick={() => {
+    <button type="button" className="notification-trigger" aria-label={`通知${unread ? `，${unread} 条未读` : ''}${summaryError ? '，暂时无法更新' : ''}`} title="通知" aria-haspopup="dialog" aria-expanded={open} onClick={() => {
       const preferred = sources.find(source => (summaries[source.tenant.slug]?.unread ?? 0) > 0) ?? sources[0];
       if (preferred) setTenantKey(preferred.tenant.slug);
       onOpen?.(); setPage(1); setDetail(null); setError(''); setOpen(true); void refreshSummary();
@@ -170,7 +184,7 @@ export function NotificationCenter({ memberships, workspaceUrl = '', closeKey, o
     {createPortal(<Dialog open={open} title={detail ? '通知详情' : '通知'} onClose={close}>
       <div className="notification-center" ref={center}>
         {detail ? <>
-          <button type="button" className="notification-back" onClick={() => { setDetail(null); setError(''); }}><ArrowLeft size={16} aria-hidden="true"/>返回通知列表</button>
+          <button type="button" className="notification-back" onClick={() => { setDetail(null); setError(''); void loadList(); }}><ArrowLeft size={16} aria-hidden="true"/>返回通知列表</button>
           <article className="notification-detail"><h3 ref={detailHeading} tabIndex={-1}>{detail.title}</h3><p className="notification-meta">{new Date(detail.createdAt).toLocaleString('zh-CN')} · {detail.readAt ? '已读' : '未读'}</p><p className="notification-body">{detail.workflowStatus&&<span className="subline">当前流转：{({active:'进行中',completed:'已完成',rejected:'已退回',withdrawn:'已撤回',exception:'待重新分配',removed:'已清理'} as Record<string,string>)[detail.workflowStatus]??detail.workflowStatus}</span>}{detail.body || '—'}</p></article>
           <Notice text={error} />
           <div className="notification-detail-actions">
@@ -179,13 +193,15 @@ export function NotificationCenter({ memberships, workspaceUrl = '', closeKey, o
           </div>
         </> : <>
           <div className="notification-toolbar">
-            {sources.length > 1 ? <label>企业<select aria-label="通知所属企业" value={tenantKey} onChange={event => { setTenantKey(event.target.value); setPage(1); setError(''); }}>
-              {sources.map(source => <option key={source.id} value={source.tenant.slug}>{source.tenant.name}{summaries[source.tenant.slug]?.unread ? ` (${summaries[source.tenant.slug].unread})` : ''}</option>)}
-            </select></label> : <span>{sources[0]?.tenant.name ?? '通知'}</span>}
+            {sources.length > 1 ? <ChoiceSelect label="通知所属企业"  value={tenantKey} disabled={Boolean(reading)} onChange={event => { setTenantKey(event.target.value); setPage(1); setError(''); }}>{sources.map(source => <option key={source.id} value={source.tenant.slug}>{source.tenant.name}{summaries[source.tenant.slug]?.unread ? ` (${summaries[source.tenant.slug].unread})` : ''}</option>)}</ChoiceSelect> : <span>{sources[0]?.tenant.name ?? '通知'}</span>}
             <button type="button" disabled={loading || !sources.length} onClick={() => { void loadList(); void refreshSummary(); }}><RefreshCw size={16} aria-hidden="true"/>刷新</button>
           </div>
+          <div className="notification-filters">
+            <ChoiceSelect label="通知状态" value={filter} disabled={Boolean(reading)} onChange={event => { setFilter(event.target.value as 'all' | 'unread'); setPage(1); setError(''); }}><option value="all">全部通知</option><option value="unread">只看未读</option></ChoiceSelect>
+            <button type="button" disabled={Boolean(reading) || loading || !data?.unread} onClick={() => void readAll()}>{reading === 'all' ? '正在标记…' : '全部标为已读'}</button>
+          </div>
           <Notice text={error || summaryError} />
-          {loading ? <Loading/> : error ? <Empty text="通知加载失败，请重试。"/> : !data?.items.length ? <div className="notification-empty"><Bell size={32} aria-hidden="true"/><strong>{summaries[tenantKey]?.enabled === false ? '业务通知未启用' : '暂无通知'}</strong></div> : <>
+          {loading ? <Loading/> : error ? <Empty text="通知加载失败，请重试。"/> : !data?.items.length ? <div className="notification-empty"><Bell size={32} aria-hidden="true"/><strong>{summaries[tenantKey]?.enabled === false ? '业务通知未启用' : filter === 'unread' ? '暂无未读通知' : '暂无通知'}</strong></div> : <>
             <p className="notification-count">{data.unread ? `${data.unread} 条未读` : '全部已读'}</p>
             <ul className="notification-center-list">{data.items.map(item => <li key={item.id}>
               <button className={`notification-item ${item.readAt ? '' : 'unread'}`} type="button" onClick={() => { setDetail(item); setError(''); void read(item); }}>

@@ -11,8 +11,10 @@ services:
     env_file: ../var/phase1-compose.env
     environment:
       KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+      CONTENT_STORAGE_PATH: /var/lib/suite/content
     volumes:
       - knowledge_originals:/var/lib/suite/knowledge
+      - content_media:/var/lib/suite/content
     ports: ["127.0.0.1:4621:4600"]
     depends_on:
       migrate: { condition: service_completed_successfully }
@@ -26,8 +28,10 @@ services:
     env_file: ../var/phase1-compose.env
     environment:
       KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+      CONTENT_STORAGE_PATH: /var/lib/suite/content
     volumes:
       - knowledge_originals:/var/lib/suite/knowledge
+      - content_media:/var/lib/suite/content
     ports: ["127.0.0.1:4622:4602"]
     command: ["node", "apps/api/dist/worker.js"]
     depends_on:
@@ -56,4 +60,5 @@ services:
     depends_on:
       api: { condition: service_healthy }
 volumes:
+  content_media:
   knowledge_originals:

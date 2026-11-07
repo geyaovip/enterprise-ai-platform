@@ -1,6 +1,59 @@
-const appLabels: Record<string, string> = { platform: '企业管理', mes:'制造执行 MES', crm:'电商 CRM', erp: '进销存管理', ai: 'AI 助手', knowledge: '企业知识库' };
+const appLabels: Record<string, string> = { content:'品牌内容', platform: '企业管理', mes:'制造执行 MES', crm:'客户 CRM', geo:'GEO 品牌可见度', erp: '进销存管理', ai: 'AI 助手', knowledge: '企业知识库' };
 export const appName = (value: string) => appLabels[value] ?? value;
 const actions: Record<string, string> = {
+  'platform.tenant.self_create':'创建企业', 'platform.apps.default_fill':'补齐默认应用',
+  'crm.import.file':'上传导入文件', 'crm.import.group':'导入客户或订单资料', 'crm.import.mapping':'保存导入映射', 'crm.import.create':'创建导入批次', 'crm.import.preview':'校验导入资料', 'crm.import.confirm':'确认导入', 'crm.import.cancel':'停止资料导入', 'crm.import.retry':'重试资料导入', 'crm.import.compensate':'撤回导入变更',
+  "crm.lead.create": "创建线索",
+  "crm.lead.edit": "修改线索",
+  "crm.lead.assign": "分配线索",
+  "crm.lead.accept": "接受线索",
+  "crm.lead.return": "退回线索",
+  "crm.lead.invalidate": "标记无效线索",
+  "crm.lead.qualify": "标记有效线索",
+  "crm.lead.request_conversion": "申请线索转化",
+  "crm.lead.approve": "通过转化审核",
+  "crm.lead.reject": "驳回转化审核",
+  "crm.lead.convert": "转化为客户",
+  "crm.lead.contact.read": "查看线索联系方式",
+  "crm.customer.create": "建立客户档案",
+  "crm.customer.profile": "修改客户资料",
+  "crm.customer.assign": "客户归属交接",
+  "crm.business-contact.save": "保存客户联系人",
+  "crm.business-contact.read": "查看联系人明文",
+  "crm.pool.save": "调整销售分配池",
+  "crm.opportunity.save": "保存销售商机",
+  "crm.opportunity.stage": "调整商机阶段",
+  "crm.followup.create": "记录客户跟进",
+  "crm.followup.complete": "完成跟进待办",
+  "crm.service-plan.create": "创建服务计划",
+  "crm.service-plan.complete": "完成服务计划",
+  "crm.service-plan.cancel": "取消服务计划",
+  "crm.service-task.create": "指派服务任务",
+  "crm.service-task.submit": "提交服务结果",
+  "crm.service-task.approve": "通过服务审核",
+  "crm.service-task.reject": "退回服务结果",
+  "crm.risk.create": "登记客户风险",
+  "crm.risk.close": "关闭客户风险",
+  "crm.service.renewal": "建立续约商机",
+  "crm.customer.update": "编辑客户档案",
+  "crm.customer.tags": "调整客户标签",
+  "crm.customer.contact.read": "查看客户联系方式",
+  "crm.customer.export": "导出客户",
+  "crm.tag.save": "维护客户标签",
+  "crm.grants.save": "调整CRM岗位",
+  "crm.channel.save": "维护来源渠道",
+  "crm.policy.save": "调整指标口径",
+  "crm.task.save": "保存运营任务",
+  "crm.task.submit": "提交运营任务",
+  "crm.task.confirm": "确认运营任务",
+  "crm.task.reject": "退回运营任务",
+  "crm.task.withdraw": "撤回运营任务",
+  "crm.task.start": "开始运营任务",
+  "crm.task.complete": "完成运营任务",
+  "crm.task.cancel": "取消运营任务",
+  "crm.task.assign": "分配运营任务",
+  "crm.task.reschedule": "调整运营期限",
+
   'mes.material.save':'保存物料','mes.bom.save':'保存BOM草稿','mes.bom.publish':'发布BOM','mes.bom.review':'保存BOM审查','mes.bom.review.resolve':'处理BOM审查','mes.plan.save':'保存生产计划','mes.plan.release':'发布生产计划','mes.plan.cancel':'取消生产计划','mes.order.create':'派发工单','mes.order.start':'工单开工','mes.order.cancel':'取消工单','mes.report.create':'提交报工','mes.report.approve':'通过报工','mes.report.reject':'拒绝报工','mes.access.update':'调整MES岗位',
   'erp.statement.read': '查看往来对账单',
   'erp.advance.apply': '预收预付抵扣账款',
@@ -53,5 +106,5 @@ const actions: Record<string, string> = {
 };
 export const actionName = (value: string) => actions[value] ?? '其他操作';
 
-const resourceLabels: Record<string, string> = { Party: '往来单位', StockDocument: '出入库单据', Quotation: '销售报价', TradeReturn: '退货单', OpeningBatch: '期初批次', Advance: '预收预付', BusinessSettings: '企业业务设置', CustomerPrice: '客户约定价格', Warehouse: '仓库', Payment: '收付款流水', Receivable: '应收账款', Payable: '应付账款', MemberInvitation: '邀请链接', MasterImport: '资料导入', MasterExport: '资料导出', Task: '任务', Announcement: '公告', Tenant: '企业', Membership: '成员', OrgUnit: '部门', TenantApp: '业务应用', TenantCapability: '企业服务', InfrastructureBinding: '服务配置', Customer: '客户', Opportunity: '商机', Product: '商品', Supplier: '供应商', PurchaseOrder: '采购订单', SalesContract: '销售合同', InvoiceRequest: '开票申请', IncomingReceipt: '到账流水', ReceiptClaim: '收款认领', KnowledgeSpace: '知识空间', KnowledgeDocument: '知识文档', AiConversation: 'AI 对话', ErpTask: '任务', ErpAnnouncement: '公告' };
+const resourceLabels: Record<string, string> = { CrmImportBatch:'客户资料导入批次', CrmImportFile:'客户资料文件', CrmCustomer:'客户档案', CrmSalesChannel:'来源渠道', CrmSettings:'CRM设置', Party: '往来单位', StockDocument: '出入库单据', Quotation: '销售报价', TradeReturn: '退货单', OpeningBatch: '期初批次', Advance: '预收预付', BusinessSettings: '企业业务设置', CustomerPrice: '客户约定价格', Warehouse: '仓库', Payment: '收付款流水', Receivable: '应收账款', Payable: '应付账款', MemberInvitation: '邀请链接', MasterImport: '资料导入', MasterExport: '资料导出', Task: '任务', Announcement: '公告', Tenant: '企业', Membership: '成员', OrgUnit: '部门', TenantApp: '业务应用', TenantCapability: '企业服务', InfrastructureBinding: '服务配置', Customer: '客户', Opportunity: '商机', Product: '商品', Supplier: '供应商', PurchaseOrder: '采购订单', SalesContract: '销售合同', InvoiceRequest: '开票申请', IncomingReceipt: '到账流水', ReceiptClaim: '收款认领', KnowledgeSpace: '知识空间', KnowledgeDocument: '知识文档', AiConversation: 'AI 对话', ErpTask: '任务', ErpAnnouncement: '公告' };
 export const resourceName = (value: string) => resourceLabels[value] ?? '业务记录';

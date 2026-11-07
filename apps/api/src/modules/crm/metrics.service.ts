@@ -13,15 +13,18 @@ export class CrmMetricsService {
   if(!tx)return this.core.db.$transaction(t=>this.read(ctx,raw,permission,t),{isolationLevel:'RepeatableRead',timeout:30000});
   const asOf=this.core.now(),settings=await this.core.settings(ctx,tx),rule=normalizeRule(raw??{...defaultRule(),currency:settings.currency},asOf),{bindings,access}=await this.core.bindings(ctx,permission,tx);
   if(!raw?.windowStart)rule.windowStart=subtractDays(new Date(rule.windowEnd!),settings.windowDays).toISOString();
-  const scopeSql=async(p:string):Promise<Prisma.Sql>=>{const {bindings:bs}=await this.core.bindings(ctx,p,tx);const clauses=bs.map(b=>Prisma.sql`(${b.orgUnitIds==='all'?Prisma.sql`TRUE`:Prisma.sql`c."orgUnitId" IN (${Prisma.join(b.orgUnitIds)})`} AND ${b.channelIds==='all'?Prisma.sql`TRUE`:Prisma.sql`i."channelId" IN (${Prisma.join(b.channelIds)})`})`);const own=clauses.length?Prisma.sql`(${Prisma.join(clauses,' OR ')})`:Prisma.sql`FALSE`;const pres=await Promise.all((prerequisite[p]??[]).map(scopeSql));return Prisma.join([own,...pres],' AND ');};
+  const portfolio=Prisma.sql`(c."ownerMembershipId"=${ctx.membershipId} OR c."serviceOwnerMembershipId"=${ctx.membershipId}
+   OR EXISTS(SELECT 1 FROM "CrmOpportunity" so WHERE so."tenantId"=c."tenantId" AND so."customerId"=c.id AND (so."ownerMembershipId"=${ctx.membershipId} OR so."participantMembershipIds" @> ${JSON.stringify([ctx.membershipId])}::jsonb))
+   OR EXISTS(SELECT 1 FROM "CrmServicePlan" sp WHERE sp."tenantId"=c."tenantId" AND sp."customerId"=c.id AND (sp."ownerMembershipId"=${ctx.membershipId} OR EXISTS(SELECT 1 FROM "CrmServiceTask" st WHERE st."tenantId"=sp."tenantId" AND st."planId"=sp.id AND st."assigneeMembershipId"=${ctx.membershipId}))))`;
+  const scopeSql=async(p:string):Promise<Prisma.Sql>=>{const {bindings:bs}=await this.core.bindings(ctx,p,tx);const clauses=bs.map(b=>Prisma.sql`(${b.orgUnitIds==='all'?Prisma.sql`TRUE`:Prisma.sql`c."orgUnitId" IN (${Prisma.join(b.orgUnitIds)})`} AND ${b.channelIds==='all'?Prisma.sql`TRUE`:Prisma.sql`i."channelId" IN (${Prisma.join(b.channelIds)})`} AND ${b.portfolioOnly?portfolio:Prisma.sql`TRUE`})`);const own=clauses.length?Prisma.sql`(${Prisma.join(clauses,' OR ')})`:Prisma.sql`FALSE`;const pres=await Promise.all((prerequisite[p]??[]).map(scopeSql));return Prisma.join([own,...pres],' AND ');};
   const visible=await scopeSql(permission);
   const valid=Prisma.sql`o.status IN ('paid','completed') AND NOT o.compensated AND o."paidAmount">o."refundAmount" AND o."paidAt"<${asOf}`;
   const inWindow=Prisma.sql`${valid} AND o."paidAt">=${new Date(rule.windowStart!)} AND o."paidAt"<${new Date(rule.windowEnd!)}`;
   const rows=await tx.$queryRaw(Prisma.sql`
-   WITH visible AS (SELECT DISTINCT c.id,c."displayName",c."orgUnitId",c.status,c."sourceCreatedAt",c.version,i."channelId"
+   WITH visible AS (SELECT DISTINCT c.id,c."displayName",c."orgUnitId",c.status,c."sourceCreatedAt",c.version,c.kind,c."ownerMembershipId",c."serviceOwnerMembershipId",c.industry,c.region,i."channelId"
     FROM "CrmCustomer" c JOIN "CrmCustomerIdentity" i ON i."customerId"=c.id AND i."tenantId"=c."tenantId"
     WHERE c."tenantId"=${ctx.tenantId} AND (${visible}))
-   SELECT v.id,v."displayName",v."orgUnitId",v.status,v."sourceCreatedAt",v.version,
+   SELECT v.id,v."displayName",v."orgUnitId",v.status,v."sourceCreatedAt",v.version,v.kind,v."ownerMembershipId",v."serviceOwnerMembershipId",v.industry,v.region,
     array_agg(DISTINCT v."channelId") AS "channelIds",
     ARRAY(SELECT a."tagId" FROM "CrmCustomerTagAssignment" a JOIN "CrmCustomerTag" t ON t.id=a."tagId" AND t."tenantId"=a."tenantId" WHERE a."tenantId"=${ctx.tenantId} AND a."customerId"=v.id AND t.status='active') AS "tagIds",
     COUNT(o.id) FILTER(WHERE ${valid})::int AS "lifetimeOrderCount",
@@ -31,7 +34,7 @@ export class CrmMetricsService {
     COALESCE(SUM(o."refundAmount"),0)::text AS "refundAmount",
     MIN(o."paidAt") FILTER(WHERE ${valid}) AS "firstPurchaseAt",MAX(o."paidAt") FILTER(WHERE ${valid}) AS "lastPurchaseAt"
    FROM visible v LEFT JOIN "CrmCommerceOrder" o ON o."tenantId"=${ctx.tenantId} AND o."customerId"=v.id AND o."channelId"=v."channelId" AND o.currency=${rule.currency}
-   GROUP BY v.id,v."displayName",v."orgUnitId",v.status,v."sourceCreatedAt",v.version ORDER BY v.id LIMIT 50001`);
+   GROUP BY v.id,v."displayName",v."orgUnitId",v.status,v."sourceCreatedAt",v.version,v.kind,v."ownerMembershipId",v."serviceOwnerMembershipId",v.industry,v.region ORDER BY v.id LIMIT 50001`);
   if(rows.length>50000)problem('CAPACITY_LIMIT','当前同步查询超过5万客户工程上限，请缩小授权范围或联系管理员。',413);
   const records=rows.map((r:any)=>({...r,monetary:amount(r.monetary),lifetimeNetAmount:amount(r.lifetimeNetAmount),refundAmount:amount(r.refundAmount),firstPurchaseAt:r.firstPurchaseAt?.toISOString()??null,lastPurchaseAt:r.lastPurchaseAt?.toISOString()??null,sourceCreatedAt:r.sourceCreatedAt?.toISOString()??null,recencyDays:r.lastPurchaseAt?dayDifference(asOf,r.lastPurchaseAt,settings.timezone):null,customerAgeDays:r.sourceCreatedAt?dayDifference(asOf,r.sourceCreatedAt,settings.timezone):null}));
   const channels=await this.core.visibleChannels(ctx,permission,tx),ids=channels.map((c:any)=>c.id),revisions=await tx.crmScopeRevision.findMany({where:{tenantId:ctx.tenantId,channelId:{in:ids}},orderBy:{channelId:'asc'}});

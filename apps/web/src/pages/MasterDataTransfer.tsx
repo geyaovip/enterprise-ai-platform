@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react';
 import { api, erpApi, errorText } from '../api';
-import { ConfirmDialog, Notice, ActionPanel, DialogAction } from '../components';
+import { ConfirmDialog, Notice, ActionPanel, DialogAction, InfoTip } from '../components';
 
 type Kind = 'customers' | 'products' | 'suppliers';
 type Preview = { total: number; valid: boolean; errors: Array<{ row: number; message: string }>; columns: Record<string, string>; items: Array<Record<string, unknown> | null> };
@@ -50,14 +50,13 @@ export function MasterDataTransfer({ tenantKey, kind, canWrite, query, onImporte
     finally { setBusy(false); }
   };
   return <ActionPanel title="批量导入与导出" label="导入 / 导出" busy={busy} primary={false}><div className="data-transfer">
-    <p>按当前搜索范围导出，不包含库存和账款。</p>
-    <div className="form-actions"><button type="button" disabled={busy} onClick={() => void exportRows()}>导出 CSV</button>{canWrite && <><button type="button" disabled={busy} onClick={() => download(`${kind}-template.csv`, '\uFEFF' + templates[kind])}>下载导入模板</button><button type="button" disabled={busy} onClick={() => fileInput.current?.click()}>{busy ? '处理中…' : '选择 CSV 并预览'}</button><input ref={fileInput} hidden type="file" accept=".csv,text/csv" aria-label="选择要导入的 CSV 文件" onChange={e => void load(e.target.files?.[0])} /></>}</div>
-    {canWrite && <p>UTF-8 CSV，最多 500 条、512 KiB；已有编号不覆盖。{kind === 'customers' ? '客户默认由你负责，管理员可在导入后调整。' : kind === 'products' ? '商品单位为“件”，初始库存为 0；已有库存请通过盘点处理。' : ''}</p>}
+    <div className="form-actions"><button type="button" disabled={busy} onClick={() => void exportRows()}>导出筛选资料 CSV</button><InfoTip label="导出范围">按当前搜索范围导出基础资料，不包含库存和账款。</InfoTip>{canWrite && <><button type="button" disabled={busy} onClick={() => download(`${kind}-template.csv`, '\uFEFF' + templates[kind])}>下载导入模板</button><button type="button" disabled={busy} onClick={() => fileInput.current?.click()}>{busy ? '处理中…' : '选择 CSV 并预览'}</button><InfoTip label="CSV导入要求">UTF-8 CSV，最多500条、512 KiB；已有编号不覆盖。{kind === 'customers' ? '客户默认由你负责，管理员可在导入后调整。' : kind === 'products' ? '商品单位为“件”，初始库存为0；已有库存请通过盘点处理。' : ''}</InfoTip><input ref={fileInput} hidden type="file" accept=".csv,text/csv" aria-label="选择要导入的 CSV 文件" onChange={e => void load(e.target.files?.[0])} /></>}</div>
+
     <Notice text={message} tone={tone} />
-    {preview && <section aria-label="导入预览"><h3>{fileName} · 共 {preview.total} 条</h3>{preview.errors.length ? <><p>请修改以下错误后重新选择文件：</p><ul>{preview.errors.slice(0, 30).map((error, i) => <li key={i}>第 {error.row} 行：{error.message}</li>)}</ul>{preview.errors.length > 30 && <p>还有 {preview.errors.length - 30} 个错误，请分批检查。</p>}</> : <p>校验通过。下表预览前 {preview.items.length} 条，确认后保存全部 {preview.total} 条。</p>}
+    {preview && <section aria-label="导入预览"><h3>{fileName} · 共 {preview.total} 条</h3>{preview.errors.length ? <><p>修正后重新选择文件：</p><ul>{preview.errors.slice(0, 30).map((error, i) => <li key={i}>第 {error.row} 行：{error.message}</li>)}</ul>{preview.errors.length > 30 && <p>还有 {preview.errors.length - 30} 个错误，请分批检查。</p>}</> : <p>校验通过。下表预览前 {preview.items.length} 条，确认后保存全部 {preview.total} 条。</p>}
       <div className="table-wrap"><table><thead><tr>{Object.values(preview.columns).map(title => <th key={title}>{title}</th>)}</tr></thead><tbody>{preview.items.map((row, index) => <tr key={index}>{Object.keys(preview.columns).map(key => <td key={key}>{String(row?.[key] ?? '—')}</td>)}</tr>)}</tbody></table></div>
       <div className="form-actions"><DialogAction><button type="button" className="primary" disabled={busy || !preview.valid} onClick={() => setConfirm(true)}>确认导入 {preview.total} 条</button></DialogAction><button type="button" disabled={busy} onClick={() => { setPreview(null); setCsv(''); setFileName(''); }}>取消</button></div>
     </section>}
-    <ConfirmDialog error={tone === "error" ? message : null} open={confirm} title="确认批量导入" description={<p>将新增 {preview?.total ?? 0} 条资料。已有资料不会被覆盖，库存和历史单据不会导入。</p>} busy={busy} onCancel={() => setConfirm(false)} onConfirm={() => void importRows()} />
+    <ConfirmDialog error={tone === "error" ? message : null} open={confirm} confirmLabel="确认导入" title="确认批量导入" description={<p>将新增 {preview?.total ?? 0} 条资料。已有资料不会被覆盖，库存和历史单据不会导入。{kind === 'customers' ? '新客户默认由你负责。' : kind === 'products' ? '新商品单位为“件”，初始库存为0。' : ''}</p>} busy={busy} onCancel={() => setConfirm(false)} onConfirm={() => void importRows()} />
   </div></ActionPanel>;
 }

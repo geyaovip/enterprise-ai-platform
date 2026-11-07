@@ -1,3 +1,4 @@
+import { assertNativeModelsEnabled } from './native-ai-policy';
 import { isManagementAi } from '../platform/management-ai';
 import { ConflictException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
@@ -13,7 +14,7 @@ import type { ThinkingMode } from './thinking-mode';
 import { usageColumns, type RuntimeReceipt } from './runtime-usage';
 import { assertInputBudget } from './input-budget';
 
-export type RuntimeMessage = { role: 'system' | 'user' | 'assistant'; content: string; items?:Array<Record<string,unknown>> };
+export type RuntimeMessage = { role: 'system' | 'user' | 'assistant'; content: string; items?:Array<Record<string,unknown>>; images?:Array<{mime:'image/png'|'image/jpeg';data:string}> };
 export type RuntimeTool = { id: string; description: string; parameters: unknown };
 export type RuntimeEvent = { type:'tool_request'; toolId:string; callId:string };
 export type RuntimePurpose = 'reply'|'context_summary'|'analysis'|'risk_review'|'document_extract';
@@ -32,6 +33,7 @@ export class AgentExecutionService {
   constructor(private readonly db: PrismaService, private readonly infra: InfrastructureService, private readonly models: ModelGateway, private readonly registry: RuntimeAdapterRegistry, private readonly quota:QuotaService, private readonly managed:ManagedRuntimeService, private readonly auth:AuthService) {}
 
   async execute(context: AIExecutionContext, messages: RuntimeMessage[], tools?: RuntimeTool[], onTextDelta?: (delta: string) => Promise<void>, thinkingMode?: ThinkingMode, onModelStart?: () => Promise<void>, onEvent?: (event:RuntimeEvent)=>Promise<void>, purpose: RuntimePurpose = 'reply'): Promise<RuntimeResult> {
+    assertNativeModelsEnabled();
     assertInputBudget(messages,tools);
     const legacyTest = process.env.NODE_ENV === 'test' && process.env.AGENT_RUNTIME_PROVIDER === 'test-model';
     let binding: Awaited<ReturnType<InfrastructureService['binding']>> | null = null;
@@ -56,6 +58,9 @@ export class AgentExecutionService {
       if (!legacyTest) {
         if(this.managed.enabled) { binding = await this.managed.acquire(context.request,runId,controller.signal); admitted=Boolean(binding); }
         binding ??= await this.infra.binding(context.request.tenantId, 'runtime', context.request.membershipId);
+      }
+      if (messages.some(m => m.images?.length) && !(binding?.options as {imageInputApps?:string[]}|undefined)?.imageInputApps?.includes(context.request.app.appId)) {
+        throw new ConflictException('当前应用模型尚未配置图片识别，未发送模型请求；请粘贴资料文字');
       }
       const started=await this.db.aiExecution.updateMany({where:{id:runId,status:{in:['queued','preparing']}},data:{status:'running',bindingId:binding?.id,bindingVersion:binding?.version}});
       if(!started.count || controller.signal.aborted) throw new ConflictException('AI execution cancelled');

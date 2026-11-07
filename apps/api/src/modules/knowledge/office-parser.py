@@ -1,10 +1,24 @@
 """Bounded, read-only Office XML extraction. Never extracts ZIP entries to disk."""
-import sys, io, json, zipfile, posixpath
+import sys, io, json, zipfile, posixpath, re
 from xml.etree import ElementTree as ET
 
 def main():
     raw = sys.stdin.buffer.read(8 * 1024 * 1024 + 1)
     if len(raw) > 8 * 1024 * 1024: raise ValueError('DOCUMENT_TOO_LARGE')
+    if sys.argv[1] == 'xls':
+        from legacy_excel import read_xls
+        blocks=[];length=0
+        for sheet in read_xls(raw):
+            header='';formulas=set(tuple(x)for x in sheet['formulaCells'])
+            for i,row in enumerate(sheet['rows']):
+                values=['[公式未采用]' if (i,j)in formulas else v for j,v in enumerate(row)]
+                text=' | '.join(values).strip()
+                if not any(v.strip()for v in values):continue
+                if not header:header=text[:200]
+                length+=len(text)
+                if length>180000:raise ValueError('DOCUMENT_TOO_LARGE')
+                blocks.append({'text':text,'locator':{'sheet':sheet['name'],'row':i+1,'tableHeader':header,'block':'table','formulaOmitted':any((i,j)in formulas for j in range(len(row)))}})
+        print(json.dumps(blocks,ensure_ascii=False));return
     archive = zipfile.ZipFile(io.BytesIO(raw))
     entries = archive.infolist()
     if len(entries) > 2048 or sum(e.file_size for e in entries) > 32 * 1024 * 1024:
@@ -41,7 +55,6 @@ def main():
                 style = element.find('w:pPr/w:pStyle', ns)
                 outline = element.find('w:pPr/w:outlineLvl', ns)
                 value = style.attrib.get('{' + ns['w'] + '}val', '') if style is not None else ''
-                import re
                 match = re.match(r'(?:heading|标题)([1-6])$', value, re.I)
                 level = int(match.group(1)) if match else int(outline.attrib.get('{' + ns['w'] + '}val', '9')) + 1 if outline is not None else 10
                 if level <= 6 and text.strip():
@@ -69,6 +82,15 @@ def main():
                     kind = cell.attrib.get('t')
                     if kind == 's': value = shared[int(value)]
                     elif kind == 'inlineStr': value = ''.join(t.text or '' for t in cell.findall('.//s:t', ns))
+                    formula = cell.findtext('s:f', default='', namespaces=ns)
+                    if formula and not value: value = '[公式结果未缓存：=' + formula + ']'
+                    reference = cell.attrib.get('r', '')
+                    match = re.fullmatch(r'([A-Z]+)[0-9]+', reference)
+                    if match:
+                        column = 0
+                        for char in match.group(1): column = column * 26 + ord(char) - 64
+                        if column > 16384 or column <= len(values): raise ValueError('DOCUMENT_INVALID')
+                        values.extend([''] * (column - len(values) - 1))
                     values.append(value)
                 if not header: header = ' | '.join(values)[:200]
                 add(' | '.join(values), {'tableHeader': header, 'sheet': sheet.attrib.get('name', ''), 'row': int(row.attrib.get('r', 0))})

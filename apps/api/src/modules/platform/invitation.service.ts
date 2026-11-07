@@ -1,3 +1,4 @@
+import { readCollectionPage, collectionResult } from './collection-page';
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { z } from 'zod';
 import type { Request } from 'express';
@@ -13,7 +14,7 @@ const roles=z.enum(['admin','sales','purchasing','warehouse','finance']);
 export class InvitationService {
  constructor(private readonly db:PrismaService,private readonly auth:AuthService,private readonly quota:QuotaService){}
  private publicItem(item:{id:string;email:string;name:string;role:string;kind:string;expiresAt:Date;usedAt:Date|null;revokedAt:Date|null}) {return item;}
- async list(ctx:RequestContext){this.auth.require(ctx,'platform.manage');return this.db.memberInvitation.findMany({where:{tenantId:ctx.tenantId},select:{id:true,email:true,name:true,role:true,kind:true,expiresAt:true,usedAt:true,revokedAt:true},orderBy:{createdAt:'desc'},take:100});}
+ async list(ctx:RequestContext,query:unknown={}){this.auth.require(ctx,'platform.manage');const paging=readCollectionPage(query),where={tenantId:ctx.tenantId};const items=await this.db.memberInvitation.findMany({where,select:{id:true,email:true,name:true,role:true,kind:true,expiresAt:true,usedAt:true,revokedAt:true},orderBy:[{createdAt:'desc'},{id:'asc'}],...(paging?{skip:paging.skip,take:paging.take}:{skip:0,take:100})});return paging?collectionResult(items,await this.db.memberInvitation.count({where}),paging):items;}
  async create(ctx:RequestContext,body:unknown){
   this.auth.require(ctx,'platform.manage');const input=readBody(z.object({kind:z.enum(['invite','recovery']).default('invite'),email:identityInput,name:label(100),role:roles.default('sales'),reason:label(500).optional()}),body);const token=newSessionToken();
   const item=await this.db.$transaction(async tx=>{
@@ -42,7 +43,7 @@ export class InvitationService {
    if(item.kind==='recovery'){
     if(!user?.active||user.platformRole||!input.password)conflict('账号恢复条件已变化');const members=await tx.membership.findMany({where:{userId:user.id,active:true}});if(members.length!==1||members[0].tenantId!==item.tenantId)conflict('账号已关联其他企业，须自行验证恢复');await tx.user.update({where:{id:user.id},data:{passwordHash:hashPassword(input.password)}});await tx.session.deleteMany({where:{userId:user.id}});
    }else{
-    if(user){if(!user.active||user.id!==authenticatedId)conflict('请用现有账号登录后加入');}else{if(!input.password)conflict('请设置至少 12 位密码');user=await tx.user.create({data:{...identityWhere(item.email),name:input.name??item.name,passwordHash:hashPassword(input.password)}});}
+    if(user){if(!user.active||user.id!==authenticatedId)conflict('请用现有账号登录后加入');}else{throw new UnauthorizedException('请先使用受邀邮箱验证码登录，再接受邀请');}
     if(await tx.membership.findUnique({where:{tenantId_userId:{tenantId:item.tenantId,userId:user.id}}}))conflict('该账号已加入企业');await this.quota.checkSeat(item.tenantId,tx);const member=await tx.membership.create({data:{tenantId:item.tenantId,userId:user.id,role:item.role}});const root=await tx.orgUnit.findFirst({where:{tenantId:item.tenantId,parentId:null}});if(root)await tx.membershipOrg.create({data:{tenantId:item.tenantId,membershipId:member.id,orgUnitId:root.id,primary:true}});
    }
    await tx.memberInvitation.update({where:{id:item.id},data:{usedAt:new Date()}});await tx.auditEvent.create({data:{tenantId:item.tenantId,userId:user!.id,membershipId:item.createdByMembershipId,requestId:req.headers['x-request-id']?.toString()??newSessionToken(),appId:'platform',action:'platform.invitation.accept',resourceType:'MemberInvitation',resourceId:item.id,detail:{kind:item.kind}}});return{ok:true,tenantKey:info.tenantKey,loginRequired:true};

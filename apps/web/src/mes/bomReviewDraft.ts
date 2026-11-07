@@ -1,0 +1,4 @@
+/** Whitelist editable work only. Source/vision provenance is never supplied by a draft. */
+export function encodeBomReview(result:any){
+ return {selectedGroup:result.selectedGroup,groups:result.groups.map((g:any)=>({id:g.id,productId:g.product?.id??null,selectedVariant:g.selectedVariant??null,reviewed:!!g.reviewed,lines:g.lines.map((l:any,i:number)=>({key:l.locator?.method==='manual-source'?'manual:'+l.reviewId:'source:'+i,materialId:l.material?.id??null,quantity:l.quantity??null,excluded:!!l.excluded,factReviewed:!!l.factReviewed,reviewNote:l.reviewNote??'',...(l.locator?.method==='manual-source'?{manual:{id:l.reviewId,filename:l.locator.filename,sha256:l.locator.sha256,page:l.locator.page??null,sheet:l.locator.sheet??null,table:l.locator.table,row:l.locator.row,sku:l.sku??'',name:l.name??'',sourceQuantity:l.sourceQuantity??'',sourceUnit:l.sourceUnit??''}}:{})}))}))};
+}

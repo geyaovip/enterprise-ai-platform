@@ -7,7 +7,7 @@ import { AuthService } from '../platform/auth.service';
 import { ModelGateway } from './model.gateway';
 import type { RequestContext } from '../platform/context';
 
-type Admission = { state: string; available?: boolean; baseUrl?: string; secret?: string; agentId?: string; fastAgentId?: string; readAgentId?: string; ephemeralTurns?: boolean; queuePosition?: number };
+type Admission = { state: string; available?: boolean; baseUrl?: string; secret?: string; agentId?: string; fastAgentId?: string; readAgentId?: string; ephemeralTurns?: boolean; imageInputApps?:string[]; queuePosition?: number };
 type ManagedMembers = { members: Array<{ tenantId: string; membershipId: string; warm: boolean }> };
 
 @Injectable()
@@ -33,15 +33,21 @@ export class ManagedRuntimeService {
       this.db.aiProviderSettings.count({ where: { tenantId: ctx.tenantId } }),
       this.call('status', { tenantId: ctx.tenantId, membershipId: ctx.membershipId }),
     ]);
-    return { managed: true, available: Boolean(model || state.available), state: state.state };
+    return { managed: true, available: Boolean(model || state.available || this.models.defaultRuntimeSettings()), state: state.state };
   }
   async preparedMembers(): Promise<ManagedMembers['members']> {
     if (!this.enabled) return [];
     return (await this.call('list', {}) as unknown as ManagedMembers).members;
   }
+  private async selectedModel(ctx: Pick<RequestContext, 'tenantId' | 'membershipId'>) {
+    const custom = await this.models.runtimeSettings(ctx.tenantId);
+    if (custom) return custom;
+    const state = await this.call('status', { tenantId: ctx.tenantId, membershipId: ctx.membershipId }) as Admission & {profileConfigured?: boolean};
+    return state.profileConfigured ? null : this.models.defaultRuntimeSettings();
+  }
   async prepare(ctx: RequestContext) {
     if (!this.enabled) return;
-    const model = await this.models.runtimeSettings(ctx.tenantId);
+    const model = await this.selectedModel(ctx);
     await this.call('prepare', { tenantId: ctx.tenantId, membershipId: ctx.membershipId, ...(model ? { model } : {}) });
   }
   async unprepare(ctx: Pick<RequestContext, 'tenantId' | 'membershipId'>) {
@@ -54,7 +60,7 @@ export class ManagedRuntimeService {
     if (!state.available) return null;
     // A manually bound address is never silently replaced by a managed Gateway.
     if (initial && state.state === 'unprovisioned') return null;
-    const model = await this.models.runtimeSettings(ctx.tenantId);
+    const model = await this.selectedModel(ctx);
     const deadline = Date.now() + 240000;
     while (!signal.aborted && Date.now() < deadline) {
       const fresh = await this.db.membership.findFirst({ where: { id: ctx.membershipId, tenantId: ctx.tenantId, active: true, user: { active: true }, tenant: { active: true } } });
@@ -69,7 +75,7 @@ export class ManagedRuntimeService {
       if (result.state === 'failed') throw new ServiceUnavailableException('AI 助手启动失败，请稍后重试或联系管理员');
       if (result.state === 'ready') {
         if (signal.aborted) throw new ConflictException('本次执行已停止');
-        const runtimeOptions = { ...(result.fastAgentId ? { fastAgentId: result.fastAgentId } : {}), ...(result.readAgentId ? { readAgentId: result.readAgentId } : {}), ...(result.ephemeralTurns ? { ephemeralTurns: true } : {}) };
+        const runtimeOptions = { imageInputApps:result.imageInputApps??[], ...(result.fastAgentId ? { fastAgentId: result.fastAgentId } : {}), ...(result.readAgentId ? { readAgentId: result.readAgentId } : {}), ...(result.ephemeralTurns ? { ephemeralTurns: true } : {}) };
         if (initial) {
           if (initial.baseUrl !== result.baseUrl) throw new ConflictException('执行环境地址与受管实例不一致');
           return { ...initial, options: { ...(initial.options as Record<string, unknown>), ...runtimeOptions } };

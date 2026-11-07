@@ -10,11 +10,12 @@
     "preview": "vite preview --host 127.0.0.1 --port 4601"
   },
   "dependencies": {
+    "@phosphor-icons/react": "^2.1.10",
+    "@suite/frontend": "workspace:*",
     "qrcode.react": "4.2.0",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "react-router-dom": "7.18.4",
-    "@suite/frontend": "workspace:*"
+    "react-router-dom": "7.18.4"
   },
   "devDependencies": {
     "@types/react": "19.3.0",

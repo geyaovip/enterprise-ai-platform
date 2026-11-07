@@ -12,7 +12,7 @@ export const brandMarks: Record<BrandId, {name:string;meaning:string;parts:Part[
     {d:'m7 20 14 8v15L7 35V20Z',fill:'accent'},
     {d:'m27 28 14-8v15l-14 8V28Z',fill:'primary'},
   ]},
-  crm: {name:'电商 CRM',meaning:'连接客户，持续经营',parts:[
+  crm: {name:'客户 CRM',meaning:'连接客户，持续经营',parts:[
     {d:'M24 5a7 7 0 1 0 0 14 7 7 0 0 0 0-14ZM10 24a6 6 0 1 0 0 12 6 6 0 0 0 0-12Zm28 0a6 6 0 1 0 0 12 6 6 0 0 0 0-12Z',fill:'primary'},
     {d:'m19 18 3 2-5.5 8-3-2L19 18Zm10 0 5.5 8-3 2-5.5-8 3-2ZM19 28h10v4H19v-4ZM12 42a16 16 0 0 1 24 0l-3 2a12 12 0 0 0-18 0l-3-2Z',fill:'accent'},
   ]},

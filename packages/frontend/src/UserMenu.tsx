@@ -1,6 +1,7 @@
 import { useEffect, useId, useRef, useState } from 'react';
 import type { ReactNode } from 'react';
-import { UserRound, Building2, Monitor, LayoutGrid, LogOut, ChevronUp, ChevronDown } from 'lucide-react';
+import { AppearancePicker } from './AppearancePicker';
+import { UserRound, Building2, Monitor, LayoutGrid, LogOut } from 'lucide-react';
 
 type IconName = 'account' | 'company' | 'workspace' | 'operator' | 'logout';
 export function UserMenuIcon({ name }: { name: IconName }) {
@@ -49,13 +50,13 @@ export function UserMenu({ name, email, subtitle, closeKey, onLogout, children, 
       <div className="user-menu-links" onClick={event => {
         if ((event.target as Element).closest('a')) setOpen(false);
       }}>{children}</div>
+      <AppearancePicker />
       <div className="user-menu-exit"><button type="button" onClick={() => void logout()} disabled={busy}><UserMenuIcon name="logout" />{busy ? '正在退出…' : '退出登录'}</button></div>
       {error && <p className="user-menu-error" role="alert">{error}</p>}
     </div>}
     <button type="button" ref={trigger} className="user-menu-trigger" aria-label={`${nickname}，账号菜单`} aria-expanded={open} aria-controls={open ? id : undefined} onClick={() => setOpen(value => !value)}>
       <span className="user-avatar" aria-hidden="true">{initial}</span>
       <span className="user-menu-identity"><strong title={nickname}>{nickname}</strong><span title={subtitle}>{subtitle}</span></span>
-      {open ? <ChevronUp size={16} aria-hidden="true"/> : <ChevronDown size={16} aria-hidden="true"/>}
     </button>
   </div>{trailingAction}</div>;
 }

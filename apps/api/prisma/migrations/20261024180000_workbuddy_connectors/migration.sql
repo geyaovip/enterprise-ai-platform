@@ -1,0 +1,16 @@
+CREATE TABLE "ConnectorClient" ("id" TEXT PRIMARY KEY, "name" TEXT NOT NULL, "redirectUris" JSONB NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE TABLE "ConnectorAuthorization" ("id" TEXT PRIMARY KEY, "clientId" TEXT NOT NULL, "redirectUri" TEXT NOT NULL, "appId" TEXT NOT NULL, "resource" TEXT NOT NULL, "scopes" JSONB NOT NULL, "state" TEXT, "challenge" TEXT NOT NULL, "consentUserId" TEXT, "consentHash" TEXT, "codeHash" TEXT, "grantId" TEXT, "consumedAt" TIMESTAMP(3), "deniedAt" TIMESTAMP(3), "expiresAt" TIMESTAMP(3) NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE UNIQUE INDEX "ConnectorAuthorization_codeHash_key" ON "ConnectorAuthorization"("codeHash");
+CREATE INDEX "ConnectorAuthorization_expiresAt_idx" ON "ConnectorAuthorization"("expiresAt");
+CREATE TABLE "ConnectorGrant" ("id" TEXT PRIMARY KEY, "clientId" TEXT NOT NULL, "userId" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "membershipId" TEXT NOT NULL, "appId" TEXT NOT NULL, "resource" TEXT NOT NULL, "scopes" JSONB NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL, "revokedAt" TIMESTAMP(3), "lastUsedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE INDEX "ConnectorGrant_userId_createdAt_idx" ON "ConnectorGrant"("userId", "createdAt");
+CREATE INDEX "ConnectorGrant_tenantId_membershipId_idx" ON "ConnectorGrant"("tenantId", "membershipId");
+CREATE TABLE "ConnectorToken" ("id" TEXT PRIMARY KEY, "hash" TEXT NOT NULL, "grantId" TEXT NOT NULL, "kind" TEXT NOT NULL, "expiresAt" TIMESTAMP(3) NOT NULL, "usedAt" TIMESTAMP(3), "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE UNIQUE INDEX "ConnectorToken_hash_key" ON "ConnectorToken"("hash");
+CREATE INDEX "ConnectorToken_grantId_kind_idx" ON "ConnectorToken"("grantId", "kind");
+CREATE INDEX "ConnectorToken_expiresAt_idx" ON "ConnectorToken"("expiresAt");
+CREATE TABLE "ConnectorAction" ("id" TEXT PRIMARY KEY, "grantId" TEXT NOT NULL, "tenantId" TEXT NOT NULL, "userId" TEXT NOT NULL, "membershipId" TEXT NOT NULL, "appId" TEXT NOT NULL, "command" TEXT NOT NULL, "requestKey" TEXT NOT NULL, "input" JSONB NOT NULL, "preview" JSONB NOT NULL, "fingerprint" TEXT NOT NULL, "status" TEXT NOT NULL DEFAULT 'pending', "version" INTEGER NOT NULL DEFAULT 1, "result" JSONB, "confirmedAt" TIMESTAMP(3), "expiresAt" TIMESTAMP(3) NOT NULL, "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP);
+CREATE UNIQUE INDEX "ConnectorAction_grantId_requestKey_key" ON "ConnectorAction"("grantId", "requestKey");
+ALTER TABLE "ConnectorAction" ADD COLUMN "requestFingerprint" TEXT NOT NULL;
+CREATE INDEX "ConnectorAction_tenantId_userId_createdAt_idx" ON "ConnectorAction"("tenantId", "userId", "createdAt");
+CREATE TABLE "ConnectorRate" ("key" TEXT PRIMARY KEY, "count" INTEGER NOT NULL DEFAULT 1, "expiresAt" TIMESTAMP(3) NOT NULL);

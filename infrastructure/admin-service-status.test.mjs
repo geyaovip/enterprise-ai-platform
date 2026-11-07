@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {executionStatus,knowledgeStatus} from '../packages/frontend/src/admin-service-status.ts';
+const enabled={delivered:true,enabled:true};
+assert.equal(executionStatus({managed:false,available:false,state:'manual'},enabled),'执行环境未配置');
+assert.equal(executionStatus({managed:true,available:false,state:'unavailable'},enabled),'状态读取失败');
+assert.equal(executionStatus({managed:true,available:false,state:'failed'},enabled),'执行环境启动失败');
+assert.equal(executionStatus({managed:true,available:false,state:'disabled'},enabled),'执行环境已停用');
+assert.equal(executionStatus({managed:true,available:true,state:'ready'},enabled,false),'服务暂未开放');
+assert.equal(executionStatus({managed:true,available:true,state:'ready'},{delivered:true,enabled:false}),'企业未启用');
+assert.equal(executionStatus(undefined,enabled),'状态待确认');
+assert.equal(knowledgeStatus(false,enabled),'未配置');
+assert.equal(knowledgeStatus(false,{delivered:false,enabled:false}),'尚未开通');
+assert.equal(knowledgeStatus(undefined,enabled),'状态待确认');
+console.log('10 configuration/runtime status contract checks passed; no model probes');

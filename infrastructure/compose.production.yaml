@@ -19,7 +19,7 @@ services:
     build:
       context: ..
       dockerfile: infrastructure/Dockerfile.api
-    image: enterprise-ai-platform/api:${RELEASE_TAG:?Set RELEASE_TAG}
+    image: enterprise-ai-platform/api:${API_RELEASE_TAG:-${RELEASE_TAG:?Set RELEASE_TAG}}
     env_file: ../.env.production
     command: ["pnpm", "--filter", "@suite/api", "db:deploy"]
     depends_on:
@@ -28,12 +28,14 @@ services:
     restart: "no"
 
   api:
-    image: enterprise-ai-platform/api:${RELEASE_TAG:?Set RELEASE_TAG}
+    image: enterprise-ai-platform/api:${API_RELEASE_TAG:-${RELEASE_TAG:?Set RELEASE_TAG}}
     env_file: ../.env.production
     environment:
       KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+      CONTENT_STORAGE_PATH: /var/lib/suite/content
     volumes:
       - knowledge_originals:/var/lib/suite/knowledge
+      - content_media:/var/lib/suite/content
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -45,12 +47,14 @@ services:
     restart: unless-stopped
 
   worker:
-    image: enterprise-ai-platform/api:${RELEASE_TAG:?Set RELEASE_TAG}
+    image: enterprise-ai-platform/api:${API_RELEASE_TAG:-${RELEASE_TAG:?Set RELEASE_TAG}}
     env_file: ../.env.production
     environment:
       KNOWLEDGE_STORAGE_DIR: /var/lib/suite/knowledge
+      CONTENT_STORAGE_PATH: /var/lib/suite/content
     volumes:
       - knowledge_originals:/var/lib/suite/knowledge
+      - content_media:/var/lib/suite/content
     command: ["node", "apps/api/dist/worker.js"]
     depends_on:
       migrate:
@@ -111,6 +115,7 @@ services:
     restart: unless-stopped
 
 volumes:
+  content_media:
   knowledge_originals:
   postgres_data:
   caddy_data:

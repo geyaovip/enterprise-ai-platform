@@ -1,6 +1,6 @@
 import type { ComponentType } from 'react';
 // Frontend modules are trusted build-time code, paired with a server manifest.
-export type BusinessApplicationEntry = {appId:string;routePrefix:string;description?:string;shortName?:string;Page:ComponentType<{tenantKey:string;permissions:readonly string[]}>};
+export type BusinessApplicationEntry = {appId:string;routePrefix:string;description?:string;shortName?:string;Page:ComponentType<{tenantKey:string;permissions:readonly string[];isTenantAdmin?:boolean}>};
 const entries=new Map<string,BusinessApplicationEntry>();
 export function registerBusinessApplication(entry:BusinessApplicationEntry){
  const refreshing=import.meta.env.DEV&&entries.get(entry.appId)?.routePrefix===entry.routePrefix;

@@ -1,0 +1,17 @@
+ALTER TABLE "ContentDocumentVersion" ADD COLUMN "publishedAt" TIMESTAMP(3);
+UPDATE "ContentDocumentVersion" v SET "publishedAt"=v."createdAt" FROM "ContentDocument" d WHERE d."id"=v."documentId" AND d."tenantId"=v."tenantId" AND d."publishedVersion"=v."version";
+ALTER TABLE "ContentGrant" ADD CONSTRAINT "ContentGrant_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentSettings" ADD CONSTRAINT "ContentSettings_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentDocument" ADD CONSTRAINT "ContentDocument_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentDocumentVersion" ADD CONSTRAINT "ContentDocumentVersion_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentProject" ADD CONSTRAINT "ContentProject_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentAsset" ADD CONSTRAINT "ContentAsset_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentArtifact" ADD CONSTRAINT "ContentArtifact_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentArtifactVersion" ADD CONSTRAINT "ContentArtifactVersion_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentBatch" ADD CONSTRAINT "ContentBatch_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentGenerationItem" ADD CONSTRAINT "ContentGenerationItem_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentProviderAttempt" ADD CONSTRAINT "ContentProviderAttempt_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentExport" ADD CONSTRAINT "ContentExport_tenantId_fkey" FOREIGN KEY ("tenantId") REFERENCES "Tenant"("id") ON DELETE CASCADE;
+ALTER TABLE "ContentGrant" ADD CONSTRAINT "ContentGrant_role_check" CHECK ("role" IN ('manager','creator','reviewer','viewer'));
+ALTER TABLE "ContentDocument" ADD CONSTRAINT "ContentDocument_kind_check" CHECK ("kind" IN ('brand','product'));
+ALTER TABLE "ContentSettings" ADD CONSTRAINT "ContentSettings_limits_check" CHECK ("maxBatch" BETWEEN 1 AND 60 AND "monthlyImageLimit">=0);

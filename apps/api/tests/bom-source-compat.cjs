@@ -1,0 +1,4 @@
+const assert=require('node:assert/strict');
+const{withoutRetiredBomChecks:clean}=require('../dist/modules/mes/bom-source-compat');
+const date=new Date(),input={date,ocrComparison:{status:'conflict'},rows:[{ocrCheck:{status:'conflict'},quantity:'2',vision:{usageIds:['receipt']},reviewReasons:['独立OCR发现疑点：数量不同','需要人工核对'],reviewNote:'用户手写OCR备注'}]};
+const before=structuredClone(input),out=clean(input);assert.deepEqual(input,before);assert.equal(out.date,date);assert.equal(out.ocrComparison,undefined);assert.equal(out.rows[0].ocrCheck,undefined);assert.equal(out.rows[0].quantity,'2');assert.deepEqual(out.rows[0].vision,input.rows[0].vision);assert.deepEqual(out.rows[0].reviewReasons,['需要人工核对']);assert.equal(out.rows[0].reviewNote,'用户手写OCR备注');assert.equal(clean(null),null);assert.equal(clean(undefined),undefined);console.log('Retired BOM metadata: 11 compatibility assertions passed');

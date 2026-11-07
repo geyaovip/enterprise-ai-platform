@@ -1,3 +1,4 @@
+import { PagedCollection } from '../components';
 import { createContext, useContext, useState, useRef, useEffect } from "react";
 import type { ReactNode } from "react";
 import {
@@ -15,6 +16,8 @@ import {
   Empty,
   Pager,
   ConfirmDialog,
+  DataResult,
+  EntitySelect,
 } from "../components";
 export const MesContext = createContext<any>(null);
 export const useMes = () => useContext(MesContext);
@@ -48,42 +51,8 @@ export const date = (v: any) =>
 export function Status({ value }: { value: string }) {
   return <span className="badge">{labels[value] ?? value}</span>;
 }
-export function Table({
-  headers,
-  children,
-}: {
-  headers: string[];
-  children: ReactNode;
-}) {
-  return (
-    <div className="table-wrap">
-      <table>
-        <thead>
-          <tr>
-            {headers.map((h) => (
-              <th key={h}>{h}</th>
-            ))}
-          </tr>
-        </thead>
-        <tbody>{children}</tbody>
-      </table>
-    </div>
-  );
-}
-export function Result({ data, loading, error, children }: any) {
-  return (
-    <>
-      <Notice text={error} />
-      {loading && !data ? (
-        <Loading />
-      ) : data ? (
-        children
-      ) : (
-        <Empty text="暂无数据" />
-      )}
-    </>
-  );
-}
+export function Table({headers,children,paginate=false,pagination}:{headers:string[];children:ReactNode;paginate?:boolean;pagination?:{page:number;total:number;size:number;onPage:(page:number)=>void}}){const content=<table><thead><tr>{headers.map(h=><th key={h}>{h}</th>)}</tr></thead><tbody>{children}</tbody></table>;return paginate||pagination?<PagedCollection label={headers[0]+'分页'} pagination={pagination}>{content}</PagedCollection>:<div className="table-wrap">{content}</div>;}
+export function Result(props: any) { return <DataResult {...props}/>; }
 export function useAction() {
   const [busy, setBusy] = useState(false),
     [error, setError] = useState<string | null>(null),
@@ -155,12 +124,12 @@ export function AiLink({
     </Link>
   ) : null;
 }
-export function useList(type: string) {
+export function useList(type: string, { defaultStatus = "" } = {}) {
   const c = useMes(),
     [params, setParams] = useSearchParams(),
     [q, setQ] = useState(params.get("q") ?? ""),
     page = Math.max(1, Number(params.get("page")) || 1),
-    status = params.get("status") ?? "";
+    status = params.get("status") ?? defaultStatus;
   useEffect(() => setQ(params.get("q") ?? ""), [params.get("q")]);
   const d = useApiData<any>(
     c.base +
@@ -253,75 +222,9 @@ export function useList(type: string) {
     ) : null,
   };
 }
-export function Picker({
-  label,
-  type,
-  value,
-  onChange,
-  kind,
-  status,
-  selectedLabel,
-}: {
-  label: string;
-  type: "materials" | "boms";
-  value: string;
-  onChange: (v: any) => void;
-  kind?: string;
-  status?: string;
-  selectedLabel?: string;
-}) {
-  const c = useMes(),
-    [q, setQ] = useState(""),
-    [search, setSearch] = useState("");
-  useEffect(() => {
-    const t = setTimeout(() => setSearch(q), 250);
-    return () => clearTimeout(t);
-  }, [q]);
-  const d = useApiData<any>(
-    c.base +
-      "/" +
-      type +
-      "?" +
-      new URLSearchParams({
-        q: search,
-        page_size: "50",
-        ...(type === "materials" ? { active: "true" } : {}),
-        ...(kind ? { kind } : {}),
-        ...(status ? { status } : {}),
-      }),
-  );
-  return (
-    <Field label={label}>
-      <input
-        aria-label={"搜索" + label}
-        placeholder={"搜索" + label}
-        value={q}
-        onChange={(e) => setQ(e.target.value)}
-      />
-      <select
-        aria-label={label}
-        required
-        value={value}
-        onChange={(e) =>
-          onChange(d.data?.items.find((x: any) => x.id === e.target.value))
-        }
-      >
-        <option value="">请选择</option>
-        {value && !d.data?.items.some((x: any) => x.id === value) && (
-          <option value={value}>{selectedLabel ?? "当前选择"}</option>
-        )}
-        {d.data?.items.map((x: any) => (
-          <option value={x.id} key={x.id}>
-            {type === "materials"
-              ? `${x.sku} · ${x.name} (${x.unit})`
-              : `${x.productSku} · ${x.productName} v${x.revision}`}
-          </option>
-        ))}
-      </select>
-      <Notice text={d.error} />
-      {d.data?.total > 50 && <span className="muted">输入关键词缩小范围</span>}
-    </Field>
-  );
+export function Picker({label,type,value,onChange,kind,status,selectedLabel}:{label:string;type:'materials'|'boms';value:string;onChange:(value:any)=>void;kind?:string;status?:string;selectedLabel?:string}) {
+  const c=useMes(),params=new URLSearchParams({...(type==='materials'?{active:'true'}:{}),...(kind?{kind}:{}),...(status?{status}:{})});
+  return <EntitySelect<any> label={label} required value={value} selectedLabel={selectedLabel} path={`${c.base}/${type}?${params}`} format={item=>type==='materials'?`${item.sku} · ${item.name} (${item.unit})`:`${item.productSku} · ${item.productName} v${item.revision}`} onChange={(_,item)=>onChange(item)}/>;
 }
 export function useLeaveGuard(dirty: boolean) {
   const allow = useRef(false);

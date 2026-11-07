@@ -1,0 +1,23 @@
+.search-select { min-width:0; }
+.entity-select { display:contents; }
+.search-select > label { font-size:13px; font-weight:500; }
+.search-select-control { display:flex; align-items:center; min-width:0; min-height:40px; border:1px solid var(--input-border,#A7AFBD); border-radius:var(--radius); background:var(--surface); }
+:root .search-select .search-select-control > input { flex:1; min-width:0; width:0; border:0; border-radius:var(--radius); background:transparent; box-shadow:none; outline:none; }
+:root .search-select .search-select-control > input:not([type=checkbox]):not([type=radio]):not([type=file]):focus { border:0; outline:none; box-shadow:none; }
+.search-select-control > button { flex:none; width:36px; height:38px; min-height:38px; padding:0; display:inline-flex; align-items:center; justify-content:center; background:transparent; border:0; box-shadow:none; color:var(--muted); }
+.search-select-control:has(input:disabled) { background:var(--canvas); opacity:.65; }
+.search-select-popup { position:fixed; z-index:1200; display:flex; flex-direction:column; padding:4px; overflow:hidden; border:1px solid var(--border); border-radius:8px; background:var(--surface); box-shadow:0 8px 28px rgb(32 37 53 / 14%); box-sizing:border-box; }
+.search-select-options { min-height:0; overflow-y:auto; overscroll-behavior:contain; }
+.search-select-options [role=option] { min-height:40px; display:flex; align-items:center; padding:8px 12px; border-radius:4px; line-height:22px; overflow-wrap:anywhere; cursor:pointer; }
+.search-select-options [role=option][data-active=true],.search-select-options [aria-selected=true] { background:var(--brand-soft); color:var(--brand); }
+.search-select-options [aria-selected=true] { font-weight:600; }
+.search-select-options [aria-disabled=true] { opacity:.5; cursor:not-allowed; }
+.search-select-feedback { padding:12px; color:var(--muted); font-size:13px; overflow-wrap:anywhere; }
+.search-select-feedback button { margin-left:12px; }
+.search-select-more { width:100%; flex:none; margin-top:4px; }
+@media(max-width:767px) {
+  .search-select-control,.search-select-options [role=option] { min-height:44px; }
+  .search-select-control > button { width:44px; height:44px; min-height:44px; }
+  .search-select-more { min-height:44px; }
+}
+@media(forced-colors:active) { .search-select-control:focus-within { outline:2px solid Highlight; outline-offset:2px; } }

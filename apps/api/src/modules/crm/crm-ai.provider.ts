@@ -1,3 +1,4 @@
+import {CrmIntakeSkill} from './crm-intake.skill';
 import {readFile} from 'node:fs/promises';import path from 'node:path';
 import {Injectable} from '@nestjs/common';import {z} from 'zod';import type {AppAiProvider,ToolDefinition,AiResourceFacts} from '../ai/app-ai-provider';import type {RequestContext} from '../platform/context';import {CrmCore} from './crm-core.service';import {CrmMetricsService} from './metrics.service';import {CrmCustomerService} from './customer.service';import {CrmSegmentService} from './segment.service';import {CrmTaskService,taskDraftSchema} from './operation-task.service';import {normalizeRule,defaultRule,SEGMENT_TEMPLATES,RULE_TOOL_SCHEMA,RULE_WIRE_SCHEMA} from './crm-rules';import {parse,problem,hash,subtractDays} from './crm.common';
 const read=(id:string,permission:string,prompt:string,input:z.ZodType<any>):ToolDefinition=>({id:'crm.'+id,appId:'crm',permission,kind:'read',confirmationRequired:false,prompt,input});
@@ -31,7 +32,8 @@ export class CrmAiProvider implements AppAiProvider{
  'crm.preview_segment':read('preview_segment','crm.segment.read','计算并保存不可变人群预览；返回evaluationId、previewHash、真实人数与有效期。任务草稿只能引用该预览。',z.object({rule:RULE_TOOL_SCHEMA}).strict()),
  'crm.create_task_draft':{id:'crm.create_task_draft',appId:'crm',permission:'crm.task.write',kind:'write',confirmationRequired:true,prompt:'仅在用户明确要求时提出运营任务草稿；引用真实预览，含标题、运营目标、planText、稳定编号checklist、hypotheses。不要承诺执行营销。负责人和期限未知时留空，之后人工补齐。',input:taskDraftSchema},
  };
- constructor(readonly core:CrmCore,readonly metrics:CrmMetricsService,readonly customers:CrmCustomerService,readonly segments:CrmSegmentService,readonly tasks:CrmTaskService){}
+ constructor(private readonly intakeSkill:CrmIntakeSkill,readonly core:CrmCore,readonly metrics:CrmMetricsService,readonly customers:CrmCustomerService,readonly segments:CrmSegmentService,readonly tasks:CrmTaskService){}
+ async intake(ctx:RequestContext,body:unknown){return this.intakeSkill.intake(ctx,body);}
  async authorizationStamp(ctx:RequestContext){return (await this.core.guard(ctx,'crm.ai.use')).fingerprint;}
  async readCacheStamp(ctx:RequestContext,toolId:string){
   const permission=this.tools[toolId]?.permission??'crm.ai.use';

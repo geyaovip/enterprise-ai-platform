@@ -12,12 +12,20 @@ export class ApiExceptionFilter implements ExceptionFilter {
     let status = 500;
     let code = 'INTERNAL_ERROR';
     let message = '服务暂时不可用';
-    let fieldErrors:unknown;
+    let fieldErrors:unknown; let retryAfter:number|undefined;
     if (error instanceof HttpException) {
       status = error.getStatus();
       code = status === 401 ? 'UNAUTHENTICATED' : status === 403 ? 'FORBIDDEN' : status === 404 ? 'NOT_FOUND' : status === 409 ? 'CONFLICT' : status === 429 ? 'RATE_LIMITED' : 'INVALID_REQUEST';
       message = error.message;
       const detail = error.getResponse();
+      if(req.path.startsWith('/api/v1/connect/')&&typeof detail==='object'&&detail!==null&&typeof (detail as any).error_description==='string'){code='CONNECTOR_REQUEST_INVALID';message=(detail as any).error_description;}
+      if(status===503&&typeof detail==='object'&&detail!==null&&(detail as any).code==='AI_NOT_OPEN'){code='AI_NOT_OPEN';message=(detail as any).message;}
+      if(status===409&&typeof detail==='object'&&detail!==null&&(detail as any).code==='AI_CHAT_LIMIT_REACHED'){code='AI_CHAT_LIMIT_REACHED';message=(detail as any).message;}
+      if (req.path.startsWith('/api/v1/auth/') && typeof detail === 'object' && detail !== null) {
+        const auth = detail as {code?:unknown;retryAfter?:unknown};
+        if (typeof auth.code === 'string' && /^[A-Z_]{2,60}$/.test(auth.code)) code = auth.code;
+        if (status === 429 && typeof auth.retryAfter === 'number' && Number.isFinite(auth.retryAfter)) { retryAfter = Math.min(86400, Math.max(1, Math.ceil(auth.retryAfter))); res.setHeader('Retry-After', String(retryAfter)); }
+      }
       if (req.path.includes('/apps/crm/') && typeof detail==='object' && detail!==null) {const d=detail as any;if(typeof d.code==='string' && /^[A-Z_]{2,60}$/.test(d.code))code=d.code;if(typeof d.message==='string')message=d.message;fieldErrors=d.fieldErrors;}
       if (status === 503 && typeof detail === 'object' && detail !== null && 'code' in detail && typeof detail.code === 'string' && ['RUNTIME_CREDENTIALS_REJECTED', 'RUNTIME_NOT_READY', 'RUNTIME_MODELS_UNAVAILABLE', 'RUNTIME_ASSISTANT_MISSING', 'RUNTIME_UNREACHABLE'].includes(detail.code)) code = detail.code;
     } else if (error instanceof Prisma.PrismaClientKnownRequestError) {
@@ -30,6 +38,6 @@ export class ApiExceptionFilter implements ExceptionFilter {
     if (status === 500 && process.env.NODE_ENV !== 'test') {
       process.stderr.write(`[api] ${requestId} ${req.method} ${req.path} ${error instanceof Error ? error.name : 'UnknownError'}\n`);
     }
-    res.status(status).json({ error: { code, message, request_id: requestId, ...(fieldErrors?{fieldErrors}:{}) } });
+    res.status(status).json({ error: { code, message, request_id: requestId, ...(fieldErrors?{fieldErrors}:{}), ...(retryAfter ? {retryAfter} : {}) } });
   }
 }

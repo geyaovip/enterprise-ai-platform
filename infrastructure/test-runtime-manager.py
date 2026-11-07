@@ -9,6 +9,55 @@ spec=importlib.util.spec_from_file_location('manager',Path(__file__).with_name('
 m=importlib.util.module_from_spec(spec);spec.loader.exec_module(m)
 
 class ControllerTests(unittest.TestCase):
+ def test_enterprise_model_survives_platform_and_application_defaults(self):
+  config={'agents':{'defaults':{},'entries':{'erp-assistant':{}}},'models':{'providers':{}},'tools':{'allow':[]}}
+  model={'model':'customer-model','baseUrl':'https://models.example/v1','apiKey':'synthetic-customer-key'}
+  with patch.dict(m.os.environ,{'NATIVE_CHAT_MODEL_ID':'deepseek-v4-1-flash-economy-261017','CRM_MODEL_ID':'doubao-seed-2-1-lite-260915','MES_MODEL_ID':'doubao-seed-evolving','AI_PROVIDER_ALLOWED_HOSTS':'models.example'}):
+   self.manager.apply_model(config,model)
+   self.manager.apply_turn_policy(config)
+   self.assertTrue(all(a['model']=={'primary':'suite/customer-model','fallbacks':[]} for a in config['agents']['entries'].values()))
+   self.assertTrue(all('thinking' not in a.get('params',{}).get('extra_body',{}) for a in config['agents']['entries'].values()))
+   self.assertEqual(config['models']['providers']['suite']['apiKey'],model['apiKey'])
+   self.assertEqual(self.manager.image_apps(config),[])
+ def test_enterprise_model_provisions_and_changes_without_a_probe(self):
+  with patch.dict(m.os.environ,{'NATIVE_CHAT_MODEL_ID':'deepseek-v4-1-flash-economy-261017','AI_PROVIDER_ALLOWED_HOSTS':'models.example'}):
+   body={**self.req(self.a),'model':{'model':'first-model','baseUrl':'https://models.example/v1','apiKey':'synthetic-customer-key'}}
+   self.acquire_ready(body)
+   self.manager.command('release',body)
+   changed={**self.req(self.a),'model':{**body['model'],'model':'second-model'}}
+   self.acquire_ready(changed)
+   config=json.loads((Path(self.manager.data['members'][self.a]['directory'])/'openclaw.json').read_text())
+   self.assertTrue(all(a['model']['primary']=='suite/second-model' for a in config['agents']['entries'].values()))
+   self.assertEqual(config['models']['providers']['suite']['baseUrl'],body['model']['baseUrl'])
+ def test_native_trial_model_overrides_all_agents_without_credential_or_vision_changes(self):
+  selected='deepseek-v4-1-flash-economy-261017'
+  config={'agents':{'defaults':{'model':{'primary':'p/old'}},'entries':{'erp-assistant':{},'erp-assistant-fast':{},'erp-assistant-read':{},'crm-assistant':{'model':{'primary':'p/old-crm'}},'mes-assistant':{'model':{'primary':'p/old-mes'}}}},'models':{'providers':{'p':{'baseUrl':'https://ark.cn-beijing.volces.com/api/v3','apiKey':'private-existing-key','models':[{'id':'old','input':['text']}]}}},'tools':{'allow':[]}}
+  with patch.dict(m.os.environ,{'NATIVE_CHAT_MODEL_ID':selected,'CRM_MODEL_ID':'doubao-seed-2-1-lite-260915','MES_MODEL_ID':'doubao-seed-evolving','OPENCLAW_IMAGE_MODEL_IDS':''}):
+   self.manager.apply_turn_policy(config)
+   self.assertTrue(all(a['model']=={'primary':'p/'+selected,'fallbacks':[]}for a in config['agents']['entries'].values()))
+   self.assertTrue(all(a['params']['extra_body']['thinking']['type']=='disabled'for a in config['agents']['entries'].values()))
+   self.assertEqual(config['models']['providers']['p']['apiKey'],'private-existing-key')
+   self.assertEqual(self.manager.image_apps(config),[])
+   self.assertEqual(config['agents']['defaults']['model']['primary'],'p/'+selected)
+   self.manager.apply_turn_policy(config)
+   self.assertEqual(sum(x['id']==selected for x in config['models']['providers']['p']['models']),1)
+  with patch.dict(m.os.environ,{'NATIVE_CHAT_MODEL_ID':'unapproved'}):
+   with self.assertRaises(ValueError):self.manager.apply_turn_policy(config)
+ def test_native_trial_model_can_provision_from_an_unconfigured_template(self):
+  selected='deepseek-v4-1-flash-economy-261017'
+  config={'agents':{'defaults':{'model':{'primary':'suite/unconfigured'}},'entries':{'erp-assistant':{}}},'models':{'providers':{}},'tools':{'allow':[]}}
+  with patch.dict(m.os.environ,{'NATIVE_CHAT_MODEL_ID':selected,'AI_PROVIDER_ALLOWED_HOSTS':'ark.cn-beijing.volces.com'}):
+   self.manager.apply_turn_policy(config)
+   self.manager.apply_model(config,{'model':selected,'baseUrl':'https://ark.cn-beijing.volces.com/api/v3','apiKey':'private-key'})
+   self.assertTrue(all(a['model']['primary']=='suite/'+selected for a in config['agents']['entries'].values()))
+ def test_geo_agent_has_its_own_tool_scope(self):
+  config={'agents':{'defaults':{},'entries':{'erp-assistant':{}}},'tools':{'allow':[]}}
+  self.manager.apply_turn_policy(config)
+  geo=config['agents']['entries']['geo-assistant']
+  self.assertEqual(geo['tools']['allow'],['geo__*','suite__return_answer'])
+  self.assertEqual(geo['agentDir'],'/state/agents/geo-assistant')
+  self.assertIn('geo__*',config['tools']['allow'])
+  self.assertNotIn('geo__*',config['agents']['entries']['content-assistant']['tools']['allow'])
  def test_policy_upgrade_preserves_existing_application_model_overrides(self):
   config={'agents':{'defaults':{'model':{'primary':'provider/erp'}},'entries':{'erp-assistant':{'model':{'primary':'provider/erp'}},'crm-assistant':{'model':{'primary':'provider/crm','fallbacks':[]}},'mes-assistant':{'model':{'primary':'provider/mes','fallbacks':[]}}}},'tools':{'allow':[]}}
   with patch.dict(m.os.environ,{'CRM_MODEL_ID':''}):self.manager.apply_turn_policy(config)
@@ -23,6 +72,36 @@ class ControllerTests(unittest.TestCase):
   self.assertNotIn('model',config['agents']['entries']['erp-assistant'])
   with patch.dict(m.os.environ,{'MES_MODEL_ID':'unapproved'}):
    with self.assertRaises(ValueError):self.manager.apply_turn_policy(config)
+ def test_image_capability_is_explicit_and_application_scoped(self):
+  config={'agents':{'defaults':{'model':{'primary':'p/text'}},'entries':{'erp-assistant':{},'mes-assistant':{'model':{'primary':'p/vision'}}}},'models':{'providers':{'p':{'models':[{'id':'text'},{'id':'vision'}]}}},'tools':{'allow':[]}}
+  with patch.dict(m.os.environ,{'CRM_MODEL_ID':'','MES_MODEL_ID':'','OPENCLAW_IMAGE_MODEL_IDS':'vision'}):
+   self.manager.apply_turn_policy(config)
+   self.assertEqual(self.manager.image_apps(config),['mes'])
+   self.assertEqual(config['models']['providers']['p']['models'][1]['input'],['text','image'])
+   self.assertNotIn('input',config['models']['providers']['p']['models'][0])
+  with patch.dict(m.os.environ,{'OPENCLAW_IMAGE_MODEL_IDS':''}):self.assertEqual(self.manager.image_apps(config),[])
+ def test_content_agent_is_isolated_and_uses_selected_enterprise_model(self):
+  config={'agents':{'defaults':{},'entries':{'erp-assistant':{'skills':['erp-only']}}},'models':{'providers':{}},'tools':{'allow':[]}}
+  model={'model':'enterprise-content','baseUrl':'https://models.example/v1','apiKey':'local-enterprise-key'}
+  with patch.dict(m.os.environ,{'AI_PROVIDER_ALLOWED_HOSTS':'models.example'}):self.manager.apply_model(config,model)
+  content=config['agents']['entries']['content-assistant']
+  self.assertEqual(content['model']['primary'],'suite/enterprise-content')
+  self.assertEqual(content['skills'],[])
+  self.assertEqual(content['agentDir'],'/state/agents/content-assistant')
+  self.assertEqual(content['tools']['allow'],['content__*','suite__return_answer'])
+ def test_status_distinguishes_operator_profile_from_existing_member_record(self):
+  body=self.req(self.a);self.acquire_ready(body)
+  self.assertTrue(self.manager.command('status',body)['profileConfigured'])
+  (m.ROOT/'profiles'/(self.tenant+'.json')).unlink()
+  value=self.manager.command('status',body)
+  self.assertTrue(value['available']);self.assertFalse(value['profileConfigured'])
+ def test_platform_default_disables_thinking_without_changing_custom_channel_policy(self):
+  config={'agents':{'defaults':{},'entries':{'erp-assistant':{}}},'models':{'providers':{}},'tools':{'allow':[]}}
+  model={'model':'deepseek-v4-1-flash-economy-261017','baseUrl':'https://ark.cn-beijing.volces.com/api/v3','apiKey':'local-platform-key','platformDefault':True}
+  with patch.dict(m.os.environ,{'AI_PROVIDER_ALLOWED_HOSTS':'ark.cn-beijing.volces.com'}):self.manager.apply_model(config,model)
+  self.assertTrue(all(v.get('params',{}).get('extra_body',{}).get('thinking')=={'type':'disabled'} for v in config['agents']['entries'].values()))
+  with patch.dict(m.os.environ,{'AI_PROVIDER_ALLOWED_HOSTS':'ark.cn-beijing.volces.com'}):
+   with self.assertRaises(ValueError):self.manager.apply_model(config,{**model,'model':'not-approved'})
  def setUp(self):
   self.tmp=tempfile.TemporaryDirectory();m.ROOT=Path(self.tmp.name);m.IDLE=15;m.MAX_ACTIVE=1
   self.now=1000;self.containers={};self.calls=[];self.boot_ok=True
@@ -121,7 +200,7 @@ class ControllerTests(unittest.TestCase):
    self.assertEqual(config['agents']['ownership'],'explicit')
    self.assertEqual(config['agents']['defaults']['systemAgent']['agentId'],'erp-assistant')
    self.assertNotIn('params',config['agents']['entries']['erp-assistant'])
-   self.assertEqual(config['agents']['entries']['erp-assistant-fast']['params']['extra_body']['thinking']['type'],'disabled')
+   self.assertNotIn('extra_body',config['agents']['entries']['erp-assistant-fast']['params'])
    self.assertEqual(ready['readAgentId'],'erp-assistant-read')
    self.assertTrue(ready['ephemeralTurns'])
    self.assertEqual(config['agents']['entries']['erp-assistant-read']['tools']['allow'],['session_status'])

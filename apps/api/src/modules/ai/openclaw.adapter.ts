@@ -36,14 +36,15 @@ export class OpenClawAdapter implements AgentRuntime {
     // tool_choice none so the model produces text directly and can stream it.
     const textOnly = !request.tools?.length;
     const options = this.binding.options as { agentId?: string; fastAgentId?: string; readAgentId?: string; ephemeralTurns?: boolean };
-    const fastText = textOnly && request.thinkingMode === 'fast' && Boolean(options.fastAgentId);
-    const readText = textOnly && !fastText && Boolean(options.readAgentId);
+    const hasImages=request.messages.some(m=>m.images?.length);
+    const fastText = textOnly && !hasImages && request.thinkingMode === 'fast' && Boolean(options.fastAgentId);
+    const readText = textOnly && !hasImages && Boolean(options.readAgentId);
     const directText = fastText || readText;
     const wireTools = directText ? [] : textOnly ? [{type:'function',name:'suite__return_answer',description:'Return the requested answer as text only. For JSON extraction, put the complete JSON in text. This function does not execute any operation.',parameters:{type:'object',properties:{text:{type:'string'}},required:['text'],additionalProperties:false}}] : request.tools!.map(tool => ({ type: 'function', name: tool.id.replace(/\./g, '__'), description: tool.description, parameters: tool.parameters }));
     const endpoint = infrastructureEndpoint(this.binding.baseUrl);
     // Each turn gets a fresh Gateway session. Only platform-authorized history is supplied;
     // Gateway memory must never reintroduce a document/object after permission revocation.
-    const agentId = fastText ? options.fastAgentId! : ['crm','mes'].includes(request.context.request.app.appId)?request.context.request.app.appId+'-assistant':readText ? options.readAgentId! : options.agentId ?? 'erp-assistant';
+    const agentId = fastText ? options.fastAgentId! : ['crm','mes','content','geo'].includes(request.context.request.app.appId)?request.context.request.app.appId+'-assistant':readText ? options.readAgentId! : options.agentId ?? 'erp-assistant';
     const sessionKey = options.ephemeralTurns ? `agent:${agentId}:dashboard:incognito-${request.runId}`
       : `agent:${agentId}:suite:${request.context.request.membershipId}:${request.runId}`;
     const startedAt = Date.now();
@@ -53,7 +54,7 @@ export class OpenClawAdapter implements AgentRuntime {
         headers: { authorization: `Bearer ${infrastructureSecret(this.binding.secretCiphertext, true)}`, 'content-type': 'application/json', 'x-openclaw-agent-id': agentId, 'x-openclaw-session-key': sessionKey },
         body: JSON.stringify({ model: `openclaw/${agentId}`, user: request.context.request.membershipId,
           instructions: request.messages.filter(x => x.role === 'system').map(x => x.content).join('\n'),
-          input: request.messages.filter(x => x.role !== 'system').flatMap(x => x.items??[{ type: 'message', role: x.role, content: [{ type: 'input_text', text: x.content }] }]),
+          input: request.messages.filter(x => x.role !== 'system').flatMap(x => x.items??[{ type: 'message', role: x.role, content: [{ type: 'input_text', text: x.content },...(x.images??[]).map(image=>({type:'input_image',source:{type:'base64',media_type:image.mime,data:image.data}}))] }]),
           tools:wireTools, tool_choice:directText?'none':'auto', stream: Boolean(request.onTextDelta), max_output_tokens: request.purpose==='context_summary'?1000:fastText ? 180 : 4000 }) });
       const headersAt = Date.now();
       if (!response.ok) throw new ServiceUnavailableException({code:'RUNTIME_HTTP_ERROR',upstreamStatus:response.status,message:`OpenClaw 返回 ${response.status}`});

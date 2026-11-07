@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { BadRequestException, ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { createHash } from 'node:crypto';
 import { z } from 'zod';
@@ -86,8 +87,8 @@ export class KnowledgeService {
   }
   async documents(ctx: RequestContext, spaceId: string, query: unknown = {}) {
     await this.space(ctx, spaceId);
-    const { page, pageSize } = readBody(z.object({ page: z.coerce.number().int().min(1).max(100000).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }), query);
-    const where = { tenantId: ctx.tenantId, spaceId, status: { not: 'deleted' } };
+    const { page, pageSize, q, status } = readBody(z.object({ q: z.string().trim().max(120).default(''), status: z.enum(['all', 'active', 'archived']).default('all'), page: z.coerce.number().int().min(1).max(100000).default(1), pageSize: z.coerce.number().int().min(1).max(100).default(50) }), query);
+    const where = { tenantId: ctx.tenantId, spaceId, status: status === 'all' ? { not: 'deleted' } : status, ...(q ? { title: { contains: q, mode: 'insensitive' as const } } : {}) };
     const [docs, total] = await Promise.all([this.db.knowledgeDocument.findMany({ where, include: { versions: { select: { id: true, version: true, filename: true, mimeType: true, byteSize: true, createdAt: true, indexes: { select: { status: true, errorCode: true, updatedAt: true, bindingId: true, bindingVersion: true } } }, orderBy: { version: 'desc' } } }, orderBy: [{ updatedAt: 'desc' }, { id: 'asc' }], skip: (page - 1) * pageSize, take: pageSize }), this.db.knowledgeDocument.count({ where })]);
     const binding = await this.infra.binding(ctx.tenantId, 'knowledge').catch(() => null);
     return { items: docs.map(doc => ({ ...doc, versions: doc.versions.map(v => ({ ...v, indexes: undefined, processingError: binding ? v.indexes.find(i => i.bindingId === binding.id && i.bindingVersion === binding.version)?.errorCode ?? null : null, processingStatus: binding ? v.indexes.find(i => i.bindingId === binding.id && i.bindingVersion === binding.version)?.status ?? 'queued' : 'awaiting_engine' })) })), total, page, pageSize };
@@ -146,7 +147,7 @@ export class KnowledgeService {
       const key = { versionId_bindingId_bindingVersion: { versionId: version.id, bindingId: binding.id, bindingVersion: binding.version } };
       const old = await tx.knowledgeIndex.findUnique({ where: key });
       if (old && ['running', 'parsing', 'deleting'].includes(old.status)) throw new ConflictException('文档正在处理，请等待当前任务结束');
-      const index = await tx.knowledgeIndex.upsert({ where: key, create: { tenantId: ctx.tenantId, versionId: version.id, bindingId: binding.id, bindingVersion: binding.version, provider: binding.provider, bindingSnapshot: binding as unknown as Prisma.InputJsonValue }, update: { status: 'queued', attempts: 0, errorCode: null, nextAttemptAt: null } });
+      const index = await tx.knowledgeIndex.upsert({ where: key, create: { tenantId: ctx.tenantId, versionId: version.id, bindingId: binding.id, bindingVersion: binding.version, provider: binding.provider, bindingSnapshot: binding as unknown as Prisma.InputJsonValue }, update: { status: 'queued', attempts: 0, errorCode: null, nextAttemptAt: null,modelAttemptId:randomUUID() } });
       await tx.auditEvent.create({ data: this.audit(ctx, 'platform.knowledge.document.reindex', id) }); return { status: index.status };
     }, { isolationLevel: 'Serializable' });
   }

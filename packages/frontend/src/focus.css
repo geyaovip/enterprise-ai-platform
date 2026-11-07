@@ -1,0 +1,23 @@
+/* Native fields own their border. Composite text fields delegate focus to one
+ * outer container, without inheriting a second rectangle around their text. */
+:root { --focus-ring:#8977d1; }
+:root :where(button,a,summary,[role="button"],[role="tab"]):focus:not(:focus-visible) { outline:none; }
+:root :where(button,a,summary,input[type="checkbox"],input[type="radio"],input[type="file"],[role="button"],[role="tab"]):focus-visible {
+  outline:2px solid var(--focus-ring); outline-offset:2px;
+}
+:root :is(input,select,textarea):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(:where(.studio-composer-input textarea,.canvas-composer textarea,.studio-history-search input,.search-select-control input,.application-search input,.canvas-note textarea)):focus {
+  outline:none; border-color:var(--focus-ring); box-shadow:0 0 0 1px var(--focus-ring);
+}
+:root :is(input,select,textarea):not([type="checkbox"]):not([type="radio"]):not([type="file"])[aria-invalid="true"]:focus { border-color:var(--danger,#b42318); box-shadow:0 0 0 1px var(--danger,#b42318); }
+:root :where(.application-search,.search-select-control,.studio-history-search):focus-within,
+:root :where(.studio-composer,.canvas-composer form):has(textarea:focus) {
+  outline:none; border-color:var(--focus-ring); box-shadow:0 0 0 1px var(--focus-ring);
+}
+:root .file-picker:has(input:focus-visible) .file-picker-button { outline:2px solid var(--focus-ring); outline-offset:2px; }
+:root .suite-ai-panel:focus,:root .task-dialog-header h2:focus { outline:none; }
+@media (forced-colors:active) {
+  :root { --focus-ring:Highlight; }
+  :root :is(input,select,textarea):not([type="checkbox"]):not([type="radio"]):not([type="file"]):not(:where(.studio-composer-input textarea,.canvas-composer textarea,.studio-history-search input,.search-select-control input,.application-search input,.canvas-note textarea)):focus,
+  :root :where(.application-search,.search-select-control,.studio-history-search):focus-within,
+  :root :where(.studio-composer,.canvas-composer form):has(textarea:focus) { outline:2px solid Highlight; outline-offset:2px; }
+}

@@ -1,0 +1,1 @@
+ALTER INDEX "ContentCopySuggestion_tenantId_artifactId_membershipId_creat_idx" RENAME TO "ContentCopySuggestion_scope_created_idx";

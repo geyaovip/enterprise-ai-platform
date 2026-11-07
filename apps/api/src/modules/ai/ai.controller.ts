@@ -7,10 +7,11 @@ import { PlatformService } from '../platform/platform.service';
 import { ManagedRuntimeService } from './managed-runtime.service';
 import { AiService } from './ai.service';
 import { AiMemoryService } from './ai-memory.service';
+import { SourceExtractionService } from './source-extraction.service';
 
 @Controller(['api/v1/operator/ai','api/v1/tenants/:tenantKey/management-ai','api/v1/tenants/:tenantKey/ai','api/v1/tenants/:tenantKey/apps/:appId/ai'])
 export class AiController {
-  constructor(private readonly auth: AuthService, private readonly gateway: ModelGateway, private readonly ai: AiService, private readonly infra: InfrastructureService, private readonly managed:ManagedRuntimeService, private readonly platformService:PlatformService, private readonly memory:AiMemoryService) {}
+  constructor(private readonly auth: AuthService, private readonly gateway: ModelGateway, private readonly ai: AiService, private readonly infra: InfrastructureService, private readonly managed:ManagedRuntimeService, private readonly platformService:PlatformService, private readonly memory:AiMemoryService, private readonly sources:SourceExtractionService) {}
   private platform(req: Request, key: string) { if(!key) throw new ForbiddenException('此入口不提供企业服务配置'); return this.auth.context(req, key, 'platform'); }
   private erp(req: Request, key: string) {
     if (req.originalUrl.startsWith('/api/v1/operator/ai')) return this.auth.operatorAiContext(req);
@@ -19,7 +20,7 @@ export class AiController {
   }
   @Get('status') async assistantStatus(@Req() req: Request, @Param('tenantKey') key: string) {
     const ctx = await this.erp(req,key); const status = await this.platformService.serviceStatus(ctx);
-    return {...status, ai:{...status.ai,enabled:['crm','mes'].includes(ctx.app.appId)?(status.ai.enabled&&ctx.permissions.includes(ctx.app.appId+'.ai.use')):(ctx.permissions.includes('platform.ai.use') || (status.ai.enabled&&ctx.permissions.includes(ctx.app.appId+'.ai.use')))},serviceTenantKey:ctx.tenantKey};
+    return {...status, ai:{...status.ai,enabled:['crm','mes','content','geo'].includes(ctx.app.appId)?(status.ai.enabled&&ctx.permissions.includes(ctx.app.appId+'.ai.use')):(ctx.permissions.includes('platform.ai.use') || (status.ai.enabled&&ctx.permissions.includes(ctx.app.appId+'.ai.use')))},serviceTenantKey:ctx.tenantKey};
   }
 
   @Get('runtime-status') runtimeStatus(@Req() r: Request, @Param('tenantKey') key: string) { return this.platform(r, key).then(async ctx => { this.auth.require(ctx, 'platform.manage'); const configs = await this.infra.list(ctx.tenantId); return { provider: 'openclaw', members: await Promise.all((await this.platformService.members(ctx)).map(async m=>({membershipId:m.id,...await this.managed.status({tenantId:ctx.tenantId,membershipId:m.id}).catch(()=>({state:'unavailable',managed:true,available:false})),enabled:configs.some(c=>c.kind==='runtime'&&c.scopeKey===m.id&&c.enabled)}))), knowledgeConfigured: configs.some(c => c.kind === 'knowledge' && c.enabled) }; }); }
@@ -27,6 +28,8 @@ export class AiController {
   @Put('settings') save(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.platform(r, key).then(ctx => this.gateway.save(ctx, b)); }
   @Post('settings/test') test(@Req() r: Request, @Param('tenantKey') key: string) { return this.platform(r, key).then(ctx => this.gateway.test(ctx)); }
   @Delete('settings') clear(@Req() r: Request, @Param('tenantKey') key: string) { return this.platform(r, key).then(ctx => this.gateway.clear(ctx)); }
+
+  @Get('chat-quota') chatQuota(@Req() r:Request,@Param('tenantKey') key:string){return this.erp(r,key).then(ctx=>this.ai.chatQuota(ctx));}
 
   @Get('conversations') list(@Req() r: Request, @Param('tenantKey') key: string) { return this.erp(r, key).then(ctx => this.ai.list(ctx)); }
   @Get('memory') memoryList(@Req() r:Request,@Param('tenantKey') key:string){return this.erp(r,key).then(ctx=>this.memory.list(ctx));}
@@ -85,4 +88,6 @@ export class AiController {
   @Get('risk-reviews/:type/:id') latestReview(@Req() r: Request, @Param('tenantKey') key: string, @Param('type') type: string, @Param('id') id: string) { return this.erp(r, key).then(ctx => this.ai.latestReview(ctx, type, id)); }
   @Post('risk-reviews') review(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.erp(r, key).then(ctx => this.ai.review(ctx, b)); }
   @Post('extract') extract(@Req() r: Request, @Param('tenantKey') key: string, @Body() b: unknown) { return this.erp(r, key).then(ctx => this.ai.extract(ctx, b)); }
+  @Get('intake/options') async intakeOptions(@Req() r:Request,@Param('tenantKey') key:string){const ctx=await this.erp(r,key);this.auth.require(ctx,ctx.app.appId+'.ai.use');return this.sources.options();}
+  @Post('intake') intake(@Req() r:Request,@Param('tenantKey') key:string,@Body() b:unknown){return this.erp(r,key).then(ctx=>this.ai.intake(ctx,b));}
 }

@@ -61,7 +61,7 @@ export class KnowledgeProcessor {
     } catch (error) {
       const attempts = index.attempts + 1;
       const deleting = index.status === 'deleting' || index.version.document.status === 'deleted';
-      const transient = error instanceof NativeKnowledgeError ? ['EMBEDDING_UNAVAILABLE', 'OCR_UNAVAILABLE', 'PARSER_TIMEOUT'].includes(error.code) : error instanceof ServiceUnavailableException;
+      const transient = error instanceof NativeKnowledgeError ? error.automaticRetry&&['EMBEDDING_UNAVAILABLE', 'OCR_UNAVAILABLE', 'PARSER_TIMEOUT'].includes(error.code) : error instanceof ServiceUnavailableException;
       const retry = deleting || transient && attempts < 3;
       await this.db.knowledgeIndex.updateMany({ where: claim, data: { status: deleting ? 'deleting' : retry ? index.status === 'parsing' ? 'parsing' : 'queued' : 'failed', attempts, nextAttemptAt: retry ? new Date(Date.now() + Math.min(300_000, 5000 * 2 ** Math.min(attempts, 6))) : null, errorCode: error instanceof Error ? error.name : 'UNKNOWN' } });
     }

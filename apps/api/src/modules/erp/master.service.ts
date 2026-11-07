@@ -192,11 +192,11 @@ export class MasterService {
     return { party, products };
   }
 
-  async purchaseDraftPreview(ctx: RequestContext, supplierId: string, lines: Array<{ productId: string; quantity: number; unitPrice?:string }>) {
+  async purchaseDraftPreview(ctx: RequestContext, supplierId: string, lines: Array<{ productId: string; quantity: number; unitPrice?:string }>, reader: Prisma.TransactionClient | PrismaService = this.db) {
     this.need(ctx, 'erp.purchase.write');
-    const supplier = await this.db.erpSupplier.findFirst({ where: { id: supplierId, tenantId: ctx.tenantId, active: true }, select: { id: true, code: true, name: true } });
+    const supplier = await reader.erpSupplier.findFirst({ where: { id: supplierId, tenantId: ctx.tenantId, active: true }, select: { id: true, code: true, name: true } });
     if (!supplier) failNotFound('有效供应商');
-    const products = await this.db.erpProduct.findMany({ where: { tenantId: ctx.tenantId, id: { in: lines.map(line => line.productId) }, active: true }, select: { id: true, sku: true, name: true, unit: true, purchasePrice: true } });
+    const products = await reader.erpProduct.findMany({ where: { tenantId: ctx.tenantId, id: { in: lines.map(line => line.productId) }, active: true }, select: { id: true, sku: true, name: true, unit: true, purchasePrice: true } });
     if (products.length !== lines.length || new Set(lines.map(line => line.productId)).size !== lines.length) failNotFound('有效商品');
     const previewLines = lines.map(line => {
       const product = products.find(item => item.id === line.productId)!;

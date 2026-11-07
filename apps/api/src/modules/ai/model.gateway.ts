@@ -1,3 +1,5 @@
+import { platformTextModel } from '../platform/model-channels';
+import { assertNativeModelsEnabled } from './native-ai-policy';
 import { BadRequestException, Injectable, ServiceUnavailableException } from '@nestjs/common';
 import { createCipheriv, createDecipheriv, randomBytes, randomUUID } from 'node:crypto';
 import { responseReceipt, usageColumns, type RuntimeReceipt } from './runtime-usage';
@@ -56,6 +58,8 @@ export class ModelGateway {
   }
 
   // Internal lifecycle integration only; never returned by an HTTP controller.
+  defaultRuntimeSettings() { return platformTextModel(); }
+
   async runtimeSettings(tenantId: string) {
     const settings = await this.db.aiProviderSettings.findUnique({ where: { tenantId } });
     if (!settings) return null;
@@ -85,6 +89,7 @@ export class ModelGateway {
   }
 
   async complete(ctx: RequestContext, messages: Array<{ role: 'system' | 'user' | 'assistant'; content: string }>, onUsage?:(receipt:RuntimeReceipt)=>Promise<void>) {
+    assertNativeModelsEnabled();
     assertInputBudget(messages);
     const settings = await this.db.aiProviderSettings.findUnique({ where: { tenantId: ctx.tenantId } });
     if (!settings) throw new ServiceUnavailableException('当前企业尚未配置 AI 模型');
@@ -94,7 +99,7 @@ export class ModelGateway {
     let usage: { prompt_tokens?: number; completion_tokens?: number } | undefined;
     let receipt:RuntimeReceipt|undefined;
     const ledgerId=onUsage?null:randomUUID();
-    const ark= new URL(settings.baseUrl).hostname==='ark.cn-beijing.volces.com'&&/^(?:doubao-seed-evolving|doubao-seed-2-1-(?:lite|pro)-)/.test(settings.model);
+    const ark= new URL(settings.baseUrl).hostname==='ark.cn-beijing.volces.com'&&/^(?:doubao-seed-evolving|doubao-seed-2-1-(?:lite|pro)-|deepseek-v4-1-flash-economy-261017$)/.test(settings.model);
     try {
       if(ledgerId)await this.db.aiModelUsage.create({data:{id:ledgerId,tenantId:ctx.tenantId,membershipId:ctx.membershipId,appId:ctx.app.appId,requestId:ctx.requestId,source:'direct',environment:process.env.NODE_ENV??'development',batchId:process.env.AI_USAGE_BATCH_ID,purpose:'reply',requestedModel:settings.model}});
       const response = await fetch(this.endpoint(settings.baseUrl), { method: 'POST', redirect: 'error', headers: { authorization: `Bearer ${this.decrypt(settings.keyCiphertext)}`, 'content-type': 'application/json' }, body: JSON.stringify({ model: settings.model, messages, temperature: 0.2,max_tokens:2048,...(ark?{thinking:{type:'disabled'}}:{}) }), signal: controller.signal });
@@ -120,6 +125,7 @@ export class ModelGateway {
   }
 
   async test(ctx: RequestContext) {
+    assertNativeModelsEnabled();
     this.auth.require(ctx, 'platform.manage');
     const answer = await this.complete(ctx, [{ role: 'user', content: '请只回复 READY' }]);
     return { ok: true, answer: answer.slice(0, 100) };

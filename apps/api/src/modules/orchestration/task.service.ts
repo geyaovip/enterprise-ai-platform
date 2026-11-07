@@ -1,3 +1,4 @@
+import { readCollectionPage, collectionResult } from '../platform/collection-page';
 import { ConflictException, Injectable, NotFoundException, HttpException } from '@nestjs/common';
 import { randomUUID } from 'node:crypto';
 import { z } from 'zod';
@@ -43,7 +44,26 @@ export class TaskService{
    await tx.auditEvent.create({data:{tenantId:ctx.tenantId,userId:ctx.userId,membershipId:ctx.membershipId,appId:ctx.app.appId,requestId:ctx.requestId,action:'platform.task.create',resourceType:'BusinessTask',resourceId:task.id}});return task;
   });
  }
- async list(ctx:RequestContext){const candidates=await this.db.businessTask.findMany({where:{tenantId:ctx.tenantId,membershipId:ctx.membershipId},include:{steps:{orderBy:{ordinal:'asc'}}},orderBy:{createdAt:'desc'},take:100});const visible=[];for(const task of candidates){try{visible.push(await this.get(ctx,task.id));}catch{visible.push({...task,title:'应用授权已变化的任务',input:{},result:null,steps:task.steps.map(s=>({...s,title:'业务步骤',input:{},result:null,errorCode:null}))});}}return visible;}
+ async list(ctx: RequestContext, query: unknown = {}) {
+  const paging = readCollectionPage(query);
+  const filter = readBody(z.object({q:z.string().trim().max(120).default(''),status:z.enum(['all','awaiting_confirmation','queued','running','waiting','completed','failed','cancelled']).default('all')}), query);
+  const where: Prisma.BusinessTaskWhereInput = {tenantId:ctx.tenantId,membershipId:ctx.membershipId,...(filter.status==='all'?{}:{status:filter.status})};
+  if (filter.q) {
+   // A title query must not reveal the former title of a task whose access was revoked.
+   const apps = await this.db.businessTaskStep.findMany({where:{tenantId:ctx.tenantId,task:{membershipId:ctx.membershipId}},distinct:['appId'],select:{appId:true}});
+   const allowed: Array<{appId:string;command:string}> = [];
+   for (const {appId} of apps) {
+    try { const fresh=await this.bus.context(ctx,appId,'task-list');allowed.push(...this.bus.registry.catalog(fresh).map(c=>({appId,command:c.id}))); } catch { /* Revoked application. */ }
+   }
+   where.title={contains:filter.q,mode:'insensitive'};
+   where.steps={every:{OR:allowed}};
+  }
+  const candidates=await this.db.businessTask.findMany({where,include:{steps:{orderBy:{ordinal:'asc'}}},orderBy:[{createdAt:'desc'},{id:'asc'}],...(paging?{skip:paging.skip,take:paging.take}:{skip:0,take:100})});
+  const visible=[];
+  for(const task of candidates){try{visible.push(await this.get(ctx,task.id));}catch{visible.push({...task,restricted:true,title:'应用授权已变化的任务',input:{},result:null,steps:task.steps.map(s=>({...s,title:'业务步骤',input:{},result:null,errorCode:null}))});}}
+  return paging?collectionResult(visible,await this.db.businessTask.count({where}),paging):visible;
+ }
+
  async get(ctx:RequestContext,id:string){const task=await this.db.businessTask.findFirst({where:{id,tenantId:ctx.tenantId,membershipId:ctx.membershipId},include:{steps:{orderBy:{ordinal:'asc'}}}});if(!task)throw new NotFoundException('任务不存在');for(const step of task.steps){const fresh=await this.bus.context(ctx,step.appId,id);if(!fresh.permissions.includes(this.bus.registry.get(step.appId,step.command).permission))throw new NotFoundException('任务不可访问');}const enriched=[];for(const step of task.steps){const cmd=this.bus.registry.get(step.appId,step.command);let preview=null;try{if(cmd.preview&&!JSON.stringify(step.input).includes('"fromStep"'))preview=await cmd.preview(await this.bus.context(ctx,step.appId,id),step.input);}catch{}enriched.push({...step,preview});}return{...task,steps:enriched};}
  async action(ctx:RequestContext,id:string,body:unknown){
   const input=readBody(z.object({action:z.enum(['confirm','cancel','retry']),version:z.int().positive()}),body);if(input.action!=='cancel')await this.get(ctx,id);

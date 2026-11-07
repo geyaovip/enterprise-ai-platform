@@ -47,7 +47,7 @@ export class InfrastructureService {
   }
 
   async list(tenantId: string) {
-    return this.db.infrastructureBinding.findMany({ where: { tenantId }, select: { id: true, kind: true, scopeKey: true, provider: true, baseUrl: true, options: true, version: true, enabled: true, updatedAt: true } });
+    return this.db.infrastructureBinding.findMany({ where: { tenantId, kind: { notIn: ['model-image','model-video'] } }, select: { id: true, kind: true, scopeKey: true, provider: true, baseUrl: true, options: true, version: true, enabled: true, updatedAt: true } });
   }
 
   async profiles(tenantId: string) {

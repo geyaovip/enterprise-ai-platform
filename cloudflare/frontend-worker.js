@@ -1,7 +1,5 @@
-const publicRoutes = new Map([
-  ['/', '/index.html'], ['/products', '/products/index.html'],
-  ['/products/erp', '/products/erp/index.html'], ['/products/crm', '/products/crm/index.html'], ['/products/mes', '/products/mes/index.html'],
-]);
+import { publicPaths, retiredPublicDestination } from './public-routes.mjs';
+const publicRoutes = new Map(publicPaths.map(path => [path, path === '/' ? '/index.html' : path + '/index.html']));
 const publicAliases = new Map([...publicRoutes].map(([route, asset]) => [asset, route]));
 const accountRoutes = new Set(['/login', '/register', '/join', '/tenants', '/onboarding']);
 export default {
@@ -22,6 +20,12 @@ export default {
         const configured = new URL(env.PUBLIC_SITE_ORIGIN);
         if (configured.protocol === 'https:' && configured.pathname === '/') origin = configured.origin;
       }
+      const retired = retiredPublicDestination(path, url.search);
+      if (retired) {
+        const destination = new URL(retired, origin);
+        url.searchParams.forEach((value, key) => { if (!destination.searchParams.has(key)) destination.searchParams.append(key, value); });
+        return Response.redirect(destination.href, 308);
+      }
       // Consolidate anonymous marketing URLs only. Existing business sessions stay on their origin.
       if ((publicRoutes.has(canonicalPath) || discovery) &&
           (url.origin !== origin || path !== canonicalPath)) {
@@ -39,7 +43,7 @@ export default {
       publicPage = publicRoutes.has(path);
       if (publicPage) { url.pathname = publicRoutes.get(path); url.search = ''; }
       else if (!path.split('/').at(-1).includes('.')) {
-        const privateRoute = accountRoutes.has(normalized) || /^\/t\/[^/]+(?:\/|$)/.test(path);
+        const privateRoute = accountRoutes.has(normalized) || /^\/t\/[^/]+(?:\/|$)/.test(path) || /^\/connect(?:\/|$)/.test(path);
         url.pathname = privateRoute ? '/app.html' : '/404.html'; url.search = '';
         if (!privateRoute) status = 404;
       } else if (path === '/products' || path.startsWith('/products/')) {

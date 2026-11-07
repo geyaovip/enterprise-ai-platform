@@ -1,5 +1,5 @@
 export type EngineSource = { datasetId: string; documentId: string };
-export type EngineChunk = { source: EngineSource; text: string; locator: Record<string, unknown>; retrieval?: { mode: string; reranker: string; degraded: boolean } };
+export type EngineChunk = { source: EngineSource; text: string; locator: Record<string, unknown>; retrieval?: { mode: string; reranker: string; degraded: boolean;reason?:string } };
 export interface KnowledgeEngine {
   readonly provider: string;
   health(): Promise<void>;

@@ -12,7 +12,8 @@ export default {
         return Response.redirect(url.toString(), 308);
       }
     }
-    if (!url.pathname.startsWith('/api/')) {
+    const oauthDiscovery=/^\/\.well-known\/oauth-(?:authorization-server|protected-resource)(?:\/|$)/.test(url.pathname);
+    if (!url.pathname.startsWith('/api/') && !oauthDiscovery) {
       const frontend = url.pathname.startsWith('/tenant-admin/') ? env.TENANT_ADMIN
         : url.pathname.startsWith('/platform-admin/') ? env.PLATFORM_ADMIN
           : env.WORKSPACE;

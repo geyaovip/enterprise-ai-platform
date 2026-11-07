@@ -1,3 +1,4 @@
+import {MesIntakeSkill} from './mes-intake.skill';
 import { createHash } from "node:crypto";
 import { Injectable } from "@nestjs/common";
 import { z } from "zod";
@@ -106,7 +107,8 @@ export class MesAiProvider implements AppAiProvider {
         .strict(),
     ),
   };
-  constructor(readonly mes: MesService) {}
+  constructor(readonly mes: MesService,private readonly intakeSkill:MesIntakeSkill) {}
+  async intake(ctx:RequestContext,body:unknown){return this.intakeSkill.intake(ctx,body);}
   selectTools(q: string, type?: string) {
     if (type === "plan" || /计划|排产|需求|生产清单/.test(q))
       return [

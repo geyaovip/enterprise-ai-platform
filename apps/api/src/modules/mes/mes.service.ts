@@ -1,3 +1,5 @@
+import { readCollectionPage, collectionResult } from '../platform/collection-page';
+import { compatibleHistory } from './bom-history';
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
 import { z } from "zod";
@@ -19,6 +21,7 @@ import {
   text,
   quantity,
   bomDraft,
+  bomUnitKey,
   planDraft,
   findingsSchema,
   assertVersion,
@@ -37,6 +40,35 @@ const MesDecimal = Prisma.Decimal.clone({ precision: 200 });
 @Injectable()
 export class MesService {
   constructor(readonly db: PrismaService) {}
+  private async verifyHistory(c:RequestContext,d:{productId:string;lines:any[]},tx:Db){
+  const checked=d.lines.filter(l=>l.sourceEvidence?.factReview);
+  if(checked.length){
+    const materials=await tx.mesMaterial.findMany({where:{tenantId:c.tenantId,id:{in:checked.map(l=>l.materialId)},active:true},select:{id:true,unit:true}});
+    for(const line of checked){
+      const material=materials.find((m:any)=>m.id===line.materialId),review=line.sourceEvidence.factReview;
+      if(!material||review.productId!==d.productId||review.materialId!==line.materialId||!new Prisma.Decimal(review.quantity).equals(line.quantity)||bomUnitKey(review.unit)!==bomUnitKey(material.unit))fail('BOM_FACT_REVIEW_CHANGED','核对后的产品、物料、用量或单位已变化，请重新核实');
+    }
+  }
+  for(const line of d.lines.filter(l=>l.sourceEvidence?.vision)){
+    const source=line.sourceEvidence,v=source.vision;
+    const job=await tx.aiTask.findFirst({where:{id:v.jobId,tenantId:c.tenantId,appId:'mes',kind:'mes-bom-vision-v1',status:{in:['completed','expired']}}});
+    const input=job?.input as any,page=input?.pages?.[v.pageIndex],file=input?.files?.find((f:any)=>f.id===v.fileId);
+    const usage=await tx.aiModelUsage.findMany({where:{id:{in:v.usageIds},tenantId:c.tenantId,requestId:'bom:'+v.jobId,usageStatus:'reported',source:{startsWith:`bom-vision:${v.pageIndex}:`}}});
+    if(!job||!file||page?.fileId!==v.fileId||file.sha256!==source.sha256||(input.productId&&input.productId!==d.productId)||input.promptSha!==v.promptSha256||usage.length!==v.usageIds.length||v.models.length!==v.usageIds.length||v.usageIds.some((id:string,i:number)=>!usage.some((u:any)=>u.id===id&&(u.model??u.requestedModel)===v.models[i])))fail('BOM_VISION_SOURCE_CHANGED','视觉来源、模型回执或适用产品不一致，请重新核对原任务');
+
+  }
+  const historical=d.lines.filter(l=>l.sourceEvidence?.historyMatch);
+  if(historical.length){
+    await this.guard(c,'mes.bom.read',tx);
+    const boms=await tx.mesBom.findMany({where:{tenantId:c.tenantId,productId:d.productId,status:'published',id:{in:[...new Set(historical.map(l=>l.sourceEvidence!.historyMatch!.bomId))]}}});
+    for(const line of historical){
+      const source=line.sourceEvidence!,match=source.historyMatch!;
+      const bom=boms.find((b:any)=>b.id===match.bomId&&b.revision===match.revision&&b.version===match.version);
+      if(!bom||!Array.isArray(bom.lines)||!bom.lines.some((p:any)=>p.materialId===line.materialId&&compatibleHistory({...source,sourceQuantity:source.originalQuantity},p)))
+        fail('BOM_HISTORY_CHANGED','历史物料参考已变更或不适用，请重新整理或改为手动选料');
+    }
+  }
+  }
   async guard(c: RequestContext, p: string, tx: Db = this.db) {
     if (c.app.appId !== "mes") fail("FORBIDDEN", "应用上下文不匹配", 403);
     const member = await tx.membership.findFirst({
@@ -274,6 +306,8 @@ export class MesService {
     };
     if (!names[type]) fail("NOT_FOUND", "未知列表", 404);
     const where: any = { tenantId: c.tenantId };
+    if(type==='reports'&&raw.orderId)where.orderId=parse(z.uuid(),raw.orderId);
+    if(type==='orders'&&raw.planId)where.planId=parse(z.uuid(),raw.planId);
     if (q.status && type !== "materials") where.status = q.status;
     if (q.q) {
       const fields =
@@ -307,7 +341,7 @@ export class MesService {
     const [items, total] = await Promise.all([
       (this.db as any)[names[type]].findMany({
         where,
-        orderBy: { createdAt: "desc" },
+        orderBy: [{ createdAt: "desc" }, { id: "asc" }],
         take: q.page_size,
         skip: (q.page - 1) * q.page_size,
       }),
@@ -522,6 +556,13 @@ export class MesService {
           materials.length !== d.lines.length + 1
         )
           fail("MATERIAL_INVALID", "请选择有效产品和组件，产品不能引用自身");
+        for(const line of d.lines){
+          const unit=line.sourceEvidence?.originalUnit;
+          const material=materials.find((m:any)=>m.id===line.materialId);
+          if(unit&&bomUnitKey(unit)!==bomUnitKey(material.unit)&&line.sourceEvidence?.factReviewed!==true)
+            fail('BOM_UNIT_REVIEW','来源单位与物料单位不同，须核对换算后用量');
+        }
+        await this.verifyHistory(c,d,tx);
         const old = id
           ? await tx.mesBom.findFirst({ where: { id, tenantId: c.tenantId } })
           : null;
@@ -666,6 +707,7 @@ export class MesService {
           )
         )
           fail("BOM_REVIEW_PENDING", "请逐项处理当前审查问题");
+        await this.verifyHistory(c,b,tx);
         await this.explode(c, b, 1, tx);
         await tx.mesBom.updateMany({
           where: {
@@ -1235,12 +1277,10 @@ export class MesService {
       }),
     };
   }
-  async auditList(c: RequestContext) {
+  async auditList(c: RequestContext, query: unknown = {}) {
     await this.guard(c, "mes.audit.read");
-    return this.db.auditEvent.findMany({
-      where: { tenantId: c.tenantId, appId: "mes" },
-      orderBy: { createdAt: "desc" },
-      take: 100,
-    });
+    const paging=readCollectionPage(query),where={tenantId:c.tenantId,appId:'mes'};
+    const rows=await this.db.auditEvent.findMany({where,orderBy:[{createdAt:'desc'},{id:'asc'}],...(paging?{skip:paging.skip,take:paging.take}:{skip:0,take:100})});
+    return paging?collectionResult(rows,await this.db.auditEvent.count({where}),paging):rows;
   }
 }

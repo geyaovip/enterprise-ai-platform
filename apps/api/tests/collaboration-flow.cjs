@@ -4,7 +4,7 @@ const { randomUUID } = require('node:crypto');
 const { PrismaPg } = require('@prisma/adapter-pg');
 const { PrismaClient } = require('../dist/generated/prisma/client');
 const { createApp } = require('../dist/server');
-const { hashPassword } = require('../dist/modules/platform/security');
+const { hashPassword, newSessionToken, tokenHash } = require('../dist/modules/platform/security');
 
 async function main() {
   const url = process.env.DATABASE_URL;
@@ -18,7 +18,7 @@ async function main() {
     const admin=await make('admin'), sales=await make('sales'), finance=await make('finance'), outsider=await make('sales',tenants[1]);
     app=await createApp(); await app.listen(0,'127.0.0.1'); const base=`http://127.0.0.1:${app.getHttpServer().address().port}/api/v1`;
     const request=async(path,method='GET',body,cookie)=> { const r=await fetch(base+path,{method,headers:{origin:'http://127.0.0.1:4601','content-type':'application/json',...(cookie?{cookie}:{})},body:body===undefined?undefined:JSON.stringify(body)}); return {status:r.status,body:await r.json(),cookie:r.headers.get('set-cookie')}; };
-    const login=async x=> {const r=await request('/auth/login','POST',{email:x.user.email,password}); assert.equal(r.status,201);return r.cookie.split(';')[0];};
+    const login=async x=> {const token=newSessionToken();await db.session.create({data:{userId:x.user.id,tokenHash:tokenHash(token),expiresAt:new Date(Date.now()+3600000)}});return 'suite_session='+token;};
     const ac=await login(admin),sc=await login(sales),fc=await login(finance),oc=await login(outsider),erp=`/tenants/${tenants[0].slug}/erp`;
     assert.equal((await request(erp+'/tasks')).status,401);
     assert.equal((await request(erp+'/tasks','GET',undefined,oc)).status,403);

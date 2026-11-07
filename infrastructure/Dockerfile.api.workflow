@@ -2,6 +2,7 @@ ARG BASE_IMAGE
 FROM ${BASE_IMAGE}
 WORKDIR /app
 RUN python3 --version && pdftotext -v && tesseract --version
+RUN (test -f /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc && python3 -c "import reportlab") || (apt-get update && apt-get install -y --no-install-recommends fonts-noto-cjk python3-reportlab && rm -rf /var/lib/apt/lists/*)
 RUN cp apps/api/package.json /tmp/suite-api-base-package.json
 COPY apps/api apps/api
 COPY infrastructure/crm-skills infrastructure/crm-skills

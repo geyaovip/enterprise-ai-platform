@@ -1,5 +1,10 @@
+import {GeoPage,geoNavigation} from './geo/GeoPage';
+import {contentNavigation} from './content/navigation';
+import {ContentHistory,ContentNavIcon} from './content/ContentHistory';
 import {MesPage,mesNavigation} from './mes/MesPage';
+import { ConnectorAuthorizePage, ConnectorActionPage, ConnectorConnectionsPage } from './pages/ConnectorPages';
 import {CrmPage,crmNavigation} from './crm/CrmPage';
+import { CrmNavigation } from './crm/CrmNavigation';
 import {registerBusinessApplication} from './applications';
 import { AuthScreen, EnterpriseOnboarding } from '@suite/frontend/auth-screen';
 import { safeReturn } from './business-context';
@@ -21,12 +26,12 @@ import { AdvancesPage } from './pages/AdvancesPage';
 import { BusinessSettingsPage } from './pages/BusinessSettingsPage';
 import { PrintDocumentPage } from './pages/PrintDocumentPage';
 import { CollaborationPage } from './pages/CollaborationPage';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
 import type { FormEvent } from 'react';
 import { Link, Navigate, Route, Routes, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { api, ApiError, errorText, tenantApi } from './api';
 import { useApiData } from './hooks';
-import { Empty, Field, Loading, Notice, PageTitle, PasswordInput, useNavigationFocus } from './components';
+import { Empty, Field, Loading, Notice, PageTitle, ConfirmDialog, useNavigationFocus } from './components';
 import type { Me, TenantApp, TenantMembership } from './types';
 import { DashboardPage, CustomerPage, OpportunityPage, ProductPage, SupplierPage } from './pages/MasterPages';
 import { PurchasePage, PurchaseDetailPage, ContractPage, ContractDetailPage } from './pages/Orders';
@@ -40,8 +45,12 @@ import { WorkItemsPage } from './pages/WorkItemsPage';
 import { InvoicePage } from './pages/InvoicePage';
 import { ReceiptPage } from './pages/ReceiptPage';
 
+const LazyContentPage=lazy(()=>import('./content/ContentPage').then(module=>({default:module.ContentPage})));
+function ContentApplication(props:{tenantKey:string;permissions:readonly string[];isTenantAdmin?:boolean}){return <Suspense fallback={<Loading/>}><LazyContentPage {...props}/></Suspense>;}
+registerBusinessApplication({appId:'geo',routePrefix:'/geo',description:'多模型品牌监测、分析与优化复测',shortName:'GEO',Page:GeoPage});
+registerBusinessApplication({appId:'content',routePrefix:'/content',description:'品牌图文创作、审核与交付',shortName:'内容',Page:ContentApplication});
 registerBusinessApplication({appId:'mes',routePrefix:'/mes',description:'BOM、生产计划与工单执行',shortName:'MES',Page:MesPage});
-registerBusinessApplication({appId:'crm',routePrefix:'/crm',description:'客户洞察、复购与运营',shortName:'CRM',Page:CrmPage});
+registerBusinessApplication({appId:'crm',routePrefix:'/crm',description:'销售跟进、客户运营与服务',shortName:'CRM',Page:CrmPage});
 
 export function App() { return <><BrandIdentity/><WorkspaceApp/></>; }
 function WorkspaceApp() {
@@ -52,21 +61,24 @@ function WorkspaceApp() {
   const location=useLocation();
   const refresh = useCallback(async () => {
     setLoading(true);
-    try { const profile=await api.get<Me>('/me');sessionStorage.setItem('suite:view-user',profile.user.id);setMe(profile); setError(null); }
+    try { const profile=await api.get<Me>('/me');try { sessionStorage.setItem('suite:view-user',profile.user.id); } catch { /* Login does not depend on browser UI storage. */ } setMe(profile); setError(null); }
     catch (e) { if (e instanceof ApiError && e.status === 401) setMe(null); else setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
   useEffect(() => {
     void refresh();
-    const focus = async () => { try { const profile=await api.get<Me>('/me');sessionStorage.setItem('suite:view-user',profile.user.id);setMe(profile); setError(null); } catch (e) { if (e instanceof ApiError && e.status === 401) setMe(null); else setError(errorText(e)); } };
+    const focus = async () => { try { const profile=await api.get<Me>('/me');try { sessionStorage.setItem('suite:view-user',profile.user.id); } catch { /* Login does not depend on browser UI storage. */ } setMe(profile); setError(null); } catch (e) { if (e instanceof ApiError && e.status === 401) setMe(null); else setError(errorText(e)); } };
     window.addEventListener('focus', focus); return () => { window.removeEventListener('focus', focus); };
   }, [refresh]);
-  const logout = async () => { try { await api.post('/auth/logout', {}); } finally { for(const key of Object.keys(sessionStorage))if(key.startsWith('suite:view:'))sessionStorage.removeItem(key);sessionStorage.removeItem('suite:view-user');setMe(null); navigate('/login'); } };
+  const logout = async () => { try { await api.post('/auth/logout', {}); } finally { try { for(const key of Object.keys(sessionStorage))if(key.startsWith('suite:view:'))sessionStorage.removeItem(key);sessionStorage.removeItem('suite:view-user'); } catch { /* The server session was already cleared. */ } setMe(null); navigate('/login'); } };
   if (loading) return <div className="boot"><Loading /></div>;
   if(location.pathname==='/join')return <JoinPage/>;
   if (!me) return <AuthScreen title="登录工作台" onLogin={refresh} initialError={error} />;
-  if (!me.tenants.length) return <EnterpriseOnboarding workspaceUrl={import.meta.env.BASE_URL.replace(/\/$/, '')} onCreated={refresh} onLogout={logout}/>;
+  if (!me.tenants.length) return <EnterpriseOnboarding workspaceUrl={import.meta.env.BASE_URL.replace(/\/$/, '')} returnTo={location.pathname.startsWith('/connect/')?location.pathname+location.search:undefined} onCreated={refresh} onLogout={logout}/>;
   return <Routes>
+    <Route path="/connect/authorize" element={<ConnectorAuthorizePage/>}/>
+    <Route path="/connect/actions/:id" element={<ConnectorActionPage/>}/>
+    <Route path="/connect/connections" element={<ConnectorConnectionsPage/>}/>
     <Route path="/login" element={<Navigate to={me.tenants.length === 1 ? `/t/${me.tenants[0].tenant.slug}` : '/tenants'} replace />} />
     <Route path="/onboarding" element={<EnterpriseOnboarding workspaceUrl="" onCreated={refresh} onLogout={logout}/>}/>
     <Route path="/tenants" element={<TenantPicker memberships={me.tenants} onLogout={logout} />} />
@@ -163,36 +175,45 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
   }, [location.pathname, apps, permissions, menu]);
   const crmMeta=useApiData<any>(apps?.some(x=>x.appId==='crm'&&x.enabled&&x.granted)&&applicationCatalog.data?.some(a=>a.appId==='crm'&&a.permissions.length)?tenantApi(tenantKey,'/apps/crm/metadata'):null);
   const mesMeta=useApiData<any>(apps?.some(x=>x.appId==='mes'&&x.enabled&&x.granted)&&applicationCatalog.data?.some(a=>a.appId==='mes'&&a.permissions.length)?tenantApi(tenantKey,'/apps/mes/metadata'):null);
+  const geoMeta=useApiData<any>(apps?.some(x=>x.appId==='geo'&&x.enabled&&x.granted)&&applicationCatalog.data?.some(a=>a.appId==='geo'&&a.permissions.length)?tenantApi(tenantKey,'/apps/geo/metadata'):null);
+  const contentMeta=useApiData<any>(apps?.some(x=>x.appId==='content'&&x.enabled&&x.granted)&&applicationCatalog.data?.some(a=>a.appId==='content'&&a.permissions.length)?tenantApi(tenantKey,'/apps/content/metadata'):null);
   const enabledApplications = [
     ...(apps?.some(x=>x.appId==='erp'&&x.enabled&&x.granted)&&applicationCatalog.data?.some(a=>a.appId==='erp'&&a.permissions.length)?[{id:'erp',name:'进销存 ERP',shortName:'ERP',description:'销售、采购、库存与财务',routePrefix:'/erp',icon:<ErpApplicationIcon/>,paths:erpNav.filter(item=>(item.roles as readonly string[]).includes(membership?.role??'')||(item.path==='erp/contracts'&&permissions.includes('erp.sales.read'))||(item.path==='erp/purchases'&&permissions.includes('erp.purchase.read'))).map(item=>'/'+item.path).filter(path=>!path.endsWith('/ai'))}]:[]),
-    ...businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix&&a.permissions.length)&&apps?.some(a=>a.appId===entry.appId&&a.enabled&&a.granted)).map(entry=>({id:entry.appId,name:entry.appId==='crm'?'电商 CRM':applicationCatalog.data!.find(a=>a.appId===entry.appId)!.displayName,shortName:entry.shortName??entry.appId.toUpperCase(),description:entry.description??'企业业务应用',routePrefix:entry.routePrefix,icon:entry.appId==='crm'?<CrmApplicationIcon/>:entry.appId==='mes'?<MesApplicationIcon/>:<ApplicationIcon/>,paths:entry.appId==='crm'?crmNavigation.filter(([, ,p])=>crmMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='mes'?mesNavigation.filter(([, ,p])=>mesMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):[entry.routePrefix]})),
+    ...businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix&&a.permissions.length)&&apps?.some(a=>a.appId===entry.appId&&a.enabled&&a.granted)).map(entry=>({id:entry.appId,name:entry.appId==='crm'?'客户 CRM':applicationCatalog.data!.find(a=>a.appId===entry.appId)!.displayName,shortName:entry.shortName??entry.appId.toUpperCase(),description:entry.description??'企业业务应用',routePrefix:entry.routePrefix,icon:entry.appId==='crm'?<CrmApplicationIcon/>:entry.appId==='mes'?<MesApplicationIcon/>:<ApplicationIcon/>,paths:entry.appId==='geo'?geoNavigation.filter(([, ,p])=>geoMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='content'?contentNavigation.filter(([, ,p])=>contentMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='crm'?crmNavigation.filter(([, ,p])=>crmMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='mes'?mesNavigation.filter(([, ,p])=>mesMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):[entry.routePrefix]})),
   ];
   const applicationNavigation = useApplicationNavigation(me.user.id,tenantKey,enabledApplications,apps!==null&&!!applicationCatalog.data);
   if (!membership) return <main className="picker"><Notice text="无权访问此企业" /><Link to="/tenants">返回企业选择</Link></main>;
   const crmEnabled=apps?.some(x=>x.appId==='crm'&&x.enabled&&x.granted)??false;
   const crmActive=applicationNavigation.currentId==='crm';
   const mesActive=applicationNavigation.currentId==='mes';
-  const businessScope=mesActive?'mes':crmActive?'crm':'erp';
-  const appAiAllowed=mesActive?mesMeta.data?.permissions.includes('mes.ai.use'):crmActive?crmMeta.data?.permissions.includes('crm.ai.use'):true;
+  const geoActive=applicationNavigation.currentId==='geo';
+  const geoEnabled=apps?.some(x=>x.appId==='geo'&&x.enabled&&x.granted)??false;
+  const contentActive=applicationNavigation.currentId==='content';
+  useEffect(()=>{const refresh=()=>{if(applicationNavigation.currentId==='content')void contentMeta.reload();};window.addEventListener('focus',refresh);return()=>window.removeEventListener('focus',refresh);},[applicationNavigation.currentId,contentMeta.reload]);
+  const contentEnabled=apps?.some(x=>x.appId==='content'&&x.enabled&&x.granted)??false;
+  const businessScope=geoActive?'geo':contentActive?'content':mesActive?'mes':crmActive?'crm':'erp';
+  const appAiAllowed=geoActive?geoMeta.data?.permissions.includes('geo.ai.use'):contentActive?contentMeta.data?.permissions.includes('content.ai.use'):mesActive?mesMeta.data?.permissions.includes('mes.ai.use'):crmActive?crmMeta.data?.permissions.includes('crm.ai.use'):applicationNavigation.currentId==='erp';
   const mesEnabled=apps?.some(x=>x.appId==='mes'&&x.enabled&&x.granted)??false;
   const erpEnabled = apps?.some(x => x.appId === 'erp' && x.enabled && x.granted) ?? false;
   const knowledgeEnabled = capabilities.some(c => c.capability === 'knowledge' && c.delivered && c.enabled);
   const prefix = `/t/${tenantKey}`;
   const active = (path: string) => path === 'erp' ? location.pathname === `${prefix}/erp` : location.pathname === `${prefix}/${path}` || location.pathname.startsWith(`${prefix}/${path}/`);
-  const aiRoute=/\/(?:erp\/|crm\/|mes\/)?ai$/.test(location.pathname);
-  return <div className="app-shell">
-    <ShellToolbar menuOpen={menu} label="业务工作台" onMenu={() => setMenu(true)} aiAction={<button type="button" className="ask-ai-trigger" aria-label="询问 AI" disabled={!appAiAllowed} title={!appAiAllowed?(mesActive?mesMeta.data?.aiAvailability?.message:crmMeta.data?.aiAvailability?.message)??'当前应用未开放AI助手':undefined} aria-expanded={aiOpen || aiRoute} onClick={() => {setMenu(false);setAiOpen(true);}}><Sparkles size={20} aria-hidden="true"/><span>询问AI</span></button>} />
+  const aiRoute=/\/(?:erp\/|crm\/|mes\/|content\/|geo\/)?ai$/.test(location.pathname);
+  return <div className={"app-shell"+(contentActive?" content-shell":"")}>
+    <ShellToolbar menuOpen={menu} label={enabledApplications.find(app => app.id === applicationNavigation.currentId)?.name ?? '业务工作台'} onMenu={() => setMenu(true)} aiAction={<button type="button" className="ask-ai-trigger" aria-label="询问 AI" disabled={!appAiAllowed} title={!appAiAllowed?(contentActive?'当前岗位未授权使用品牌内容创作官':mesActive?mesMeta.data?.aiAvailability?.message:crmMeta.data?.aiAvailability?.message)??'当前应用未开放AI助手':undefined} aria-expanded={aiOpen || aiRoute} onClick={() => {setMenu(false);setAiOpen(true);}}><Sparkles size={20} aria-hidden="true"/><span>询问AI</span></button>} />
     {menu && <button className="scrim" aria-label="关闭导航" onClick={() => setMenu(false)} />}
     <a className="skip-link" href="#main-content">跳到页面内容</a>
     <aside id="shell-navigation" className={`sidebar ${menu ? 'open' : ''}`}>
       <ShellBrand subtitle="企业应用平台"/>
       <ApplicationSwitcher {...applicationNavigation}/>
-      <div className="tenant-label workspace-tenant">{membership.tenant.name}</div>
+      {contentActive ? <Link className="studio-space" to="/tenants" aria-label={`切换企业空间，当前为${membership.tenant.name}`}><span>{membership.tenant.name}</span><ContentNavIcon path="space"/></Link> : <div className="tenant-label workspace-tenant">{membership.tenant.name}</div>}
       <nav ref={navigationRef} aria-label="主导航">
-        {crmActive&&<section className="nav-group" aria-label="CRM导航"><h2>客户经营</h2>{crmNavigation.filter(([, ,p])=>crmMeta.data?.permissions.includes(p)).map(([path,label])=>{const current=path?active('crm/'+path):location.pathname===prefix+'/crm';return <Link key={path} to={prefix+'/crm'+(path?'/'+path:'')} className={current?'active':''} aria-current={current?'page':undefined}><NavIcon name={path==='customers'?'erp/customers':path==='tasks'?'tasks':path==='settings'?'admin':'erp'}/>{label}</Link>;})}</section>}
+        {geoActive&&<section className="nav-group" aria-label="GEO导航">{geoNavigation.filter(([, ,p])=>geoMeta.data?.permissions.includes(p)).map(([path,label])=><Link key={path} to={prefix+'/geo'+(path?'/'+path:'')} className={(path?active('geo/'+path):(location.pathname===prefix+'/geo'||active('geo/projects')))?'active':''} aria-current={(path?active('geo/'+path):(location.pathname===prefix+'/geo'||active('geo/projects')))?'page':undefined}><NavIcon name="reports"/>{label}</Link>)}</section>}
+        {contentActive&&<section className="nav-group" aria-label="品牌内容导航">{contentNavigation.filter(([, ,p])=>contentMeta.data?.permissions.includes(p)).map(([path,label])=><Link key={path} to={prefix+'/content'+(path?'/'+path:'')} className={(path?active('content/'+path):(location.pathname===prefix+'/content'||active('content/projects')||active('content/canvases')))?'active':''} aria-current={(path?active('content/'+path):(location.pathname===prefix+'/content'||active('content/projects')||active('content/canvases')))?'page':undefined}><ContentNavIcon path={path}/>{label}</Link>)}<ContentHistory key={tenantKey} tenantKey={tenantKey} permissions={contentMeta.data?.permissions??[]}/></section>}
+        {crmActive&&<CrmNavigation key={tenantKey} prefix={prefix} permissions={crmMeta.data?.permissions ?? []}/>}
 
-        {mesActive&&<section className="nav-group" aria-label="MES导航"><h2>制造执行</h2>{mesNavigation.filter(([, ,p])=>mesMeta.data?.permissions.includes(p)).map(([path,label])=>{const current=path?active('mes/'+path):location.pathname===prefix+'/mes';return <Link key={path} to={prefix+'/mes'+(path?'/'+path:'')} className={current?'active':''} aria-current={current?'page':undefined}><NavIcon name={path==='settings'?'admin':path==='orders'?'tasks':'erp'}/>{label}</Link>;})}</section>}
-        {erpEnabled && !crmActive && !mesActive && erpNavGroups.map(group => {
+        {mesActive&&<section className="nav-group" aria-label="MES导航"><h2>制造执行</h2>{mesNavigation.filter(([, ,p])=>mesMeta.data?.permissions.includes(p)).map(([path,label])=>{const current=path?active('mes/'+path):location.pathname===prefix+'/mes';return <Link key={path} to={prefix+'/mes'+(path?'/'+path:'')} className={current?'active':''} aria-current={current?'page':undefined}><NavIcon name={path==='settings'?'business-settings':path==='reports'?'mes-reports':path||'mes'}/>{label}</Link>;})}</section>}
+        {erpEnabled && !crmActive && !mesActive && !contentActive && !geoActive && erpNavGroups.map(group => {
           const items = group.paths.map(path => erpNav.find(item => item.path === path)!).filter(item =>
             (item.roles as readonly string[]).includes(membership.role)
             || (item.path === 'erp/contracts' && permissions.includes('erp.sales.read'))
@@ -203,21 +224,23 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
           </section>;
         })}
         <section className="nav-group" aria-label="企业服务"><h2>企业服务</h2>
+          {geoActive && <Link aria-current={active('tasks') ? 'page' : undefined} className={active('tasks') ? 'active' : ''} to={`${prefix}/tasks`}><NavIcon name="tasks"/>任务中心</Link>}
           {knowledgeEnabled && <Link aria-current={active('knowledge') ? 'page' : undefined} className={active('knowledge') ? 'active' : ''} to={`${prefix}/knowledge`}><NavIcon name="knowledge"/>企业知识库</Link>}
           <Link aria-current={active('channels') ? 'page' : undefined} className={active('channels') ? 'active' : ''} to={`${prefix}/channels`}><NavIcon name="channels"/>消息与通知</Link>
-          {erpEnabled && !crmActive && !mesActive && membership.role === 'admin' && <Link aria-current={active('erp/business-settings') ? 'page' : undefined} className={active('erp/business-settings') ? 'active' : ''} to={`${prefix}/erp/business-settings`}><NavIcon name="erp/business-settings"/>企业业务设置</Link>}
+          {erpEnabled && !crmActive && !mesActive && !contentActive && !geoActive && membership.role === 'admin' && <Link aria-current={active('erp/business-settings') ? 'page' : undefined} className={active('erp/business-settings') ? 'active' : ''} to={`${prefix}/erp/business-settings`}><NavIcon name="erp/business-settings"/>企业业务设置</Link>}
           {membership.role === 'admin' && <a href={`${import.meta.env.VITE_TENANT_ADMIN_URL ?? 'http://127.0.0.1:4603'}/t/${tenantKey}`}><NavIcon name="tenants"/>企业管理</a>}
         </section>
       </nav>
       <div className="sidebar-footer"><UserMenu name={me.user.name} email={me.user.account ?? me.user.email} subtitle={({ admin: '企业管理员', sales: '销售', purchasing: '采购', warehouse: '仓库', finance: '财务' } as Record<string, string>)[membership.role] ?? '企业成员'} closeKey={`${location.pathname}:${menu}`} onLogout={onLogout} trailingAction={<NotificationCenter memberships={[membership]} closeKey={location.pathname} onOpen={() => setMenu(false)} onNavigate={() => setMenu(false)}/> }>
         <Link to={`${prefix}/account`} aria-current={active('account') ? 'page' : undefined}><UserMenuIcon name="account" />账号设置</Link>
+        <Link to="/connect/connections"><UserMenuIcon name="account" />已连接应用</Link>
         {me.tenants.length > 1 && <Link to="/tenants"><UserMenuIcon name="company" />切换企业</Link>}<Link to="/onboarding"><UserMenuIcon name="company" />创建或加入企业</Link>
         {membership.role === 'admin' && <a href={`${import.meta.env.VITE_TENANT_ADMIN_URL ?? 'http://127.0.0.1:4603'}/t/${tenantKey}`}><UserMenuIcon name="company" />企业管理</a>}
         {me.platformRole === 'operator' && <a href={`${import.meta.env.VITE_PLATFORM_ADMIN_URL ?? 'http://127.0.0.1:4604'}/`}><UserMenuIcon name="operator" />平台运营</a>}
       </UserMenu></div>
     </aside>
     <main id="main-content" tabIndex={-1} className="content"><ServiceStatusProvider key={tenantKey+':'+businessScope} tenantKey={tenantKey} statusPath={businessScope!=='erp'?tenantApi(tenantKey,'/apps/'+businessScope+'/ai/status'):undefined}><Notice text={error} />{apps === null ? <Loading /> : <Routes>
-      <Route index element={<Navigate to={erpEnabled ? 'erp' : crmEnabled ? 'crm' : mesEnabled ? 'mes' : knowledgeEnabled ? 'knowledge' : 'account'} replace />} />
+      <Route index element={<Navigate to={erpEnabled ? 'erp' : crmEnabled ? 'crm' : mesEnabled ? 'mes' : contentEnabled ? 'content' : geoEnabled ? 'geo' : knowledgeEnabled ? 'knowledge' : 'account'} replace />} />
       <Route path="erp" element={erpEnabled ? <DashboardPage tenantKey={tenantKey} role={membership.role} /> : <Empty text="进销存管理尚未启用，请联系企业管理员。" />} />
       <Route path="erp/quotes" element={erpEnabled ? <QuotesPage tenantKey={tenantKey} role={membership.role} /> : <Empty text="进销存管理尚未启用" />} />
       <Route path="erp/returns" element={erpEnabled ? <ReturnsPage tenantKey={tenantKey} role={membership.role} membershipId={membership.id} /> : <Empty text="进销存管理尚未启用" />} />
@@ -229,8 +252,8 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
       <Route path="erp/documents/:id" element={erpEnabled ? <PrintDocumentPage tenantKey={tenantKey} type="stock" /> : <Empty text="进销存管理尚未启用" />} />
       <Route path="erp/return-documents/:id" element={erpEnabled ? <PrintDocumentPage tenantKey={tenantKey} type="return" /> : <Empty text="进销存管理尚未启用" />} />
       <Route path="erp/quote-documents/:id" element={erpEnabled ? <PrintDocumentPage tenantKey={tenantKey} type="quote" /> : <Empty text="进销存管理尚未启用" />} />
-      {businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix)).map(({appId,routePrefix,Page})=><Route key={appId} path={`${routePrefix.slice(1)}/*`} element={<Page tenantKey={tenantKey} permissions={permissions}/>}/>)}
-      <Route path="tasks" element={<TaskCenterPage tenantKey={tenantKey}/>}/>
+      {businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix)).map(({appId,routePrefix,Page})=><Route key={appId} path={`${routePrefix.slice(1)}/*`} element={<Page tenantKey={tenantKey} permissions={permissions} isTenantAdmin={membership.role==='admin'}/>}/>)}
+      <Route path="tasks" element={<TaskCenterPage tenantKey={tenantKey} appId={applicationNavigation.currentId}/>}/>
       <Route path="erp/replenishment" element={erpEnabled?<ReplenishmentPage tenantKey={tenantKey} canCreate={permissions.includes('erp.purchase.write')}/>:<Empty text="应用尚未启用"/>}/>
       <Route path="erp/operating-events" element={erpEnabled?<OperatingEventsPage tenantKey={tenantKey} isAdmin={membership.role==='admin'}/>:<Empty text="应用尚未启用"/>}/>
       <Route path="erp/collaboration" element={erpEnabled ? <CollaborationPage tenantKey={tenantKey} membershipId={membership.id} role={membership.role} /> : <Empty text="进销存管理尚未启用，请联系企业管理员。" />} />
@@ -256,21 +279,14 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
       <Route path="channels" element={<ChannelPage tenantKey={tenantKey} isAdmin={membership.role === 'admin'} />} />
       <Route path="account" element={<AccountPage user={me.user} onChanged={onLogout} />} />
       <Route path="*" element={<div><PageTitle title="页面不存在" /><Link to={`${prefix}/erp`}>返回概览</Link></div>} />
-    </Routes>}{apps && appAiAllowed && <AiPage key={businessScope} scope={businessScope} apiBase={businessScope!=='erp'?tenantApi(tenantKey,'/apps/'+businessScope+'/ai'):undefined} tenantKey={tenantKey} inventoryReadable={!crmActive&&!mesActive&&permissions.includes('erp.inventory.read')} knowledgeEnabled={knowledgeEnabled} entry={location.pathname.includes('/erp/ai') ? 'erp' : 'enterprise'} open={aiOpen || aiRoute} onClose={() => {setAiOpen(false);if(aiRoute){const back=safeReturn(new URLSearchParams(location.search).get('returnTo'),tenantKey);navigateInShell(back&&!/\/ai(?:\?|$)/.test(back)?back:prefix+'/'+businessScope,{replace:true});}}}/>} </ServiceStatusProvider></main>
+    </Routes>}{apps && appAiAllowed && <AiPage key={businessScope} scope={businessScope} apiBase={businessScope!=='erp'?tenantApi(tenantKey,'/apps/'+businessScope+'/ai'):undefined} tenantKey={tenantKey} inventoryReadable={!crmActive&&!mesActive&&!contentActive&&!geoActive&&permissions.includes('erp.inventory.read')} knowledgeEnabled={knowledgeEnabled} entry={location.pathname.includes('/erp/ai') ? 'erp' : 'enterprise'} open={aiOpen || aiRoute} onClose={() => {setAiOpen(false);if(aiRoute){const back=safeReturn(new URLSearchParams(location.search).get('returnTo'),tenantKey);navigateInShell(back&&!/\/ai(?:\?|$)/.test(back)?back:prefix+'/'+businessScope,{replace:true});}}}/>} </ServiceStatusProvider></main>
   </div>;
 }
 
 function AccountPage({ user, onChanged }: { user: Me['user']; onChanged: () => Promise<void> }) {
-  const [currentPassword, setCurrentPassword] = useState('');
-  const [nextPassword, setNextPassword] = useState(''); const [confirmPassword, setConfirmPassword] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [message, setMessage] = useState<string | null>(null);
-  const submit = async (e: FormEvent) => {
-    e.preventDefault(); if (nextPassword !== confirmPassword) { setMessage('两次输入的新密码不一致。'); return; } setBusy(true); setMessage(null);
-    try { await api.post('/auth/change-password', { currentPassword, nextPassword }); await onChanged(); }
-    catch (error) { setMessage(errorText(error)); setBusy(false); }
-  };
-  return <><PageTitle title="账号安全"  /><form className="panel form-panel" onSubmit={submit}><h2>修改密码</h2><p>当前账号：{user.account ?? user.email}</p><p>修改成功后，当前账号的所有会话都会失效，需要重新登录。</p><Notice text={message} /><div className="form-grid"><Field label="当前密码"><PasswordInput aria-label="当前密码" autoComplete="current-password" required value={currentPassword} onChange={e => setCurrentPassword(e.target.value)} /></Field><Field label="新密码（至少 12 位）"><PasswordInput aria-label="新密码" autoComplete="new-password" minLength={12} required value={nextPassword} onChange={e => setNextPassword(e.target.value)} /></Field><Field label="确认新密码"><PasswordInput aria-label="确认新密码" autoComplete="new-password" minLength={12} required value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} /></Field></div><button className="primary" disabled={busy || !currentPassword || nextPassword.length < 12 || nextPassword !== confirmPassword}>修改密码</button></form></>;
+  const [confirm, setConfirm] = useState(false), [busy, setBusy] = useState(false), [error, setError] = useState<string | null>(null);
+  if (!user.email) return <AuthScreen title="关联登录邮箱" bindExisting onLogin={async () => { window.location.reload(); }}/>;
+  return <><PageTitle title="账号安全"/><section className="panel"><h2>登录邮箱</h2><p>{user.email}</p><Notice text={error}/><button type="button" onClick={() => setConfirm(true)}>退出所有设备</button></section><ConfirmDialog open={confirm} title="退出所有设备？" description="所有设备都需要重新验证邮箱登录。" busy={busy} onCancel={() => setConfirm(false)} onConfirm={() => { setBusy(true); void api.post('/auth/logout-all').then(onChanged).catch(e => { setError(errorText(e)); setConfirm(false); }).finally(() => setBusy(false)); }} confirmLabel="退出所有设备"/></>;
 }
 
 function AdminRedirect({ tenantKey }: { tenantKey: string }) { useEffect(() => { window.location.replace(`${import.meta.env.VITE_TENANT_ADMIN_URL ?? 'http://127.0.0.1:4603'}/t/${tenantKey}`); }, [tenantKey]); return <Loading />; }

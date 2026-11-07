@@ -1,9 +1,8 @@
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
+import {publicPaths as canonicalPublicPaths} from '../cloudflare/public-routes.mjs';
 
 async function loadWorker(path) {
-  const source = await readFile(new URL(path, import.meta.url), 'utf8');
-  return (await import(`data:text/javascript;base64,${Buffer.from(source).toString('base64')}`)).default;
+  return (await import(new URL(path, import.meta.url).href)).default;
 }
 
 const gateway = await loadWorker('../cloudflare/worker.js');
@@ -53,11 +52,11 @@ console.log('Cloudflare gateway, cookie forwarding, split frontend routes, deep 
 
 const publicPaths=[];
 const publicEnv={FRONTEND_PREFIX:'',ASSETS:{fetch(request){const path=new URL(request.url).pathname;publicPaths.push(path);return new Response(path,{headers:{'content-type':'text/html'}});}}};
-for(const [path,asset]of [['/','/index.html'],['/products','/products/index.html'],['/products/erp','/products/erp/index.html'],['/products/crm','/products/crm/index.html'],['/products/mes','/products/mes/index.html']]){const r=await frontend.fetch(new Request('https://qa.example'+path),publicEnv);assert.equal(r.status,200);assert.equal(await r.text(),asset);assert.equal(r.headers.get('x-robots-tag'),null);}
-for(const path of ['/products/','/products/erp/','/products/crm/index.html']){const r=await frontend.fetch(new Request('https://qa.example'+path+'?ref=qa'),publicEnv);assert.equal(r.status,308);assert.match(r.headers.get('location'),/\?ref=qa$/);}
+for(const [path,asset]of canonicalPublicPaths.map(path=>[path,path==='/'?'/index.html':path+'/index.html'])){const r=await frontend.fetch(new Request('https://qa.example'+path),publicEnv);assert.equal(r.status,200);assert.equal(await r.text(),asset);assert.equal(r.headers.get('x-robots-tag'),null);}
+for(const path of ['/products/','/products/erp/','/products/crm/index.html']){const r=await frontend.fetch(new Request('https://qa.example'+path+'?ref=qa'),publicEnv);assert.equal(r.status,308);assert.equal(new URL(r.headers.get('location')).searchParams.get('ref'),'qa');}
 for(const path of ['/login','/register','/t/demo/crm','/t/demo/erp']){const r=await frontend.fetch(new Request('https://qa.example'+path),publicEnv);assert.equal(await r.text(),'/app.html');assert.equal(r.headers.get('x-robots-tag'),'noindex, nofollow');}
 const notFound=await frontend.fetch(new Request('https://qa.example/products/unreleased'),publicEnv);assert.equal(notFound.status,404);assert.equal(await notFound.text(),'/404.html');
-const sitemap=await frontend.fetch(new Request('https://qa.example/sitemap.xml'),publicEnv);const xml=await sitemap.text();assert.equal((xml.match(/<url>/g)||[]).length,5);assert.ok(!xml.includes('/login'));assert.ok(!xml.includes('/t/'));
+const sitemap=await frontend.fetch(new Request('https://qa.example/sitemap.xml'),publicEnv);const xml=await sitemap.text();assert.equal((xml.match(/<url>/g)||[]).length,canonicalPublicPaths.length);assert.ok(!xml.includes('/login'));assert.ok(!xml.includes('/t/'));
 console.log('Public static pages, private application shell, product 404, canonical route redirects and sitemap boundaries passed.');
 
 for(const url of ["https://www.zhixingark.cn/products/mes?from=qa","http://zhixingark.cn/products/erp?from=qa"]){const r=await gateway.fetch(new Request(url),env);assert.equal(r.status,308);assert.ok(r.headers.get("location").startsWith("https://zhixingark.cn/products/"));assert.match(r.headers.get("location"),/from=qa/);}

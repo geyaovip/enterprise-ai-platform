@@ -1,0 +1,10 @@
+const assert=require('node:assert/strict');const{compareVisionRows}=require('../dist/modules/mes/bom-vision-compare');let checks=0;const eq=(a,b)=>{assert.deepEqual(a,b);checks++;},row=(item,name,qty='1')=>({item,part:null,mpn:null,name,spec:null,revision:null,qty,unit:null,quantities:{},sourceQty:qty,population:null}),answer=rows=>({bomPresent:true,rows});
+let a=answer([row('1','A'),row('1','B')]),b=answer([row('1','B'),row('1','A')]);let r=compareVisionRows(a,b);eq(r.map(v=>v.other.name),['B','A']);eq(r.map(v=>v.aligned),[true,true]);eq(r.map(v=>v.different),[false,false]);
+a=answer([row('1','A'),row('1','A')]);b=answer([row('1','A'),row('1','A')]);r=compareVisionRows(a,b);eq(r.map(v=>v.aligned),[false,false]);eq(r.map(v=>v.other),[undefined,undefined]);
+a=answer([row('1','V49'),row('2','B')]);b=answer([row('1','V48'),row('2','B','7')]);r=compareVisionRows(a,b);eq(r[0].identityDifferent,true);eq(r[0].quantityDifferent,false);eq(r[1].quantityDifferent,true);eq(r[1].identityDifferent,false);eq(r[0].other.name,'V49');
+r=compareVisionRows(answer([row(null,'A')]),answer([row(null,'A')]));eq(r[0].aligned,true);eq(r[0].different,false);
+r=compareVisionRows(answer([row('1','A')]),answer([row('1','A'),row('2','B')]));eq(r[1].aligned,false);eq(r[1].other,undefined);
+r=compareVisionRows(answer([{...row('1','A','2'),unit:'PC'}]),answer([{...row('1','A','2.0'),unit:'PCS'}]));eq(r[0].quantityDifferent,false);
+r=compareVisionRows(answer([row('1','A','1')]),answer([{...row('1','A','1'),sourceQty:'7'}]));eq(r[0].quantityDifferent,true);
+r=compareVisionRows(answer([{...row('1','A'),manufacturer:'Maker A'}]),answer([{...row('1','A'),manufacturer:'Maker B'}]));eq(r[0].identityDifferent,true);eq(r[0].quantityDifferent,false);
+console.log(JSON.stringify({passed:true,assertions:checks,coverage:['unique printed item','duplicate item aligned by exact unique identity','ambiguous duplicate never selects arbitrary first row','quantity and identity differences separate','new unmatched rows require source review','matching rows avoid page-wide false difference hints']}));

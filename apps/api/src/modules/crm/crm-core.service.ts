@@ -5,7 +5,8 @@ import {crmPermissions,ROLE_PERMISSIONS,ALL_SCOPE,prerequisite,type ScopeBinding
 import {hash,json,key,parse,problem} from './crm.common';
 import {z} from 'zod';
 export type Db=any;
-export type CrmAccess={member:any;permissions:string[];scopes:Record<string,ScopeBinding[]>;fingerprint:string;manager:boolean};
+type AccessBinding=ScopeBinding&{portfolioOnly?:boolean};
+export type CrmAccess={member:any;permissions:string[];scopes:Record<string,AccessBinding[]>;fingerprint:string;manager:boolean};
 @Injectable()
 export class CrmCore {
  constructor(readonly db:PrismaService){}
@@ -20,10 +21,10 @@ export class CrmCore {
   if(permission==='crm.ai.use'){const cap=await tx.tenantCapability.findUnique({where:{tenantId_capability:{tenantId:ctx.tenantId,capability:'ai'}}});if(!cap?.delivered||!cap.enabled)problem('FORBIDDEN','AI能力未启用',403);}
   if(!permissions.includes(permission))problem('FORBIDDEN','没有此CRM操作权限',403);
   const [roles,extras]=await Promise.all([tx.crmMemberGrant.findMany({where:{tenantId:ctx.tenantId,membershipId:member.id,active:true}}),tx.crmMemberPermissionGrant.findMany({where:{tenantId:ctx.tenantId,membershipId:member.id,active:true}})]);
-  const scopes:Record<string,ScopeBinding[]>={};
+  const scopes:Record<string,AccessBinding[]>={};
   if(member.role==='admin')for(const p of permissions)scopes[p]=[ALL_SCOPE];
   else{
-   for(const r of roles)for(const p of ROLE_PERMISSIONS[r.role]??[])scopes[p]=[...scopes[p]??[],...r.scopeBindings as ScopeBinding[]];
+   for(const r of roles)for(const p of ROLE_PERMISSIONS[r.role]??[])scopes[p]=[...scopes[p]??[],...(r.scopeBindings as ScopeBinding[]).map(b=>({...b,portfolioOnly:['sales','csm'].includes(r.role)}))];
    for(const e of extras)if(permissions.includes(e.permission))scopes[e.permission]=[...scopes[e.permission]??[],...e.scopeBindings as ScopeBinding[]];
   }
   return {member,permissions,scopes,manager:member.role==='admin'||roles.some((r:any)=>r.role==='manager'),fingerprint:hash({member:member.id,role:member.role,roles:roles.map((r:any)=>[r.role,r.version,r.scopeBindings]).sort(),extras:extras.map((r:any)=>[r.permission,r.version,r.scopeBindings]).sort()})};
@@ -41,9 +42,11 @@ export class CrmCore {
  async requirePair(ctx:RequestContext,permission:string,org:string,channel:string,tx:Db=this.db){if(!await this.pairAllowed(ctx,permission,org,channel,tx))problem('FORBIDDEN','当前组织与渠道组合不在授权范围内',403);}
  async customerWhere(ctx:RequestContext,permission='crm.customer.read',tx:Db=this.db){
   const {bindings}=await this.bindings(ctx,permission,tx);
-  const OR=bindings.map(b=>({...(b.orgUnitIds==='all'?{}:{orgUnitId:{in:b.orgUnitIds}}),identities:{some:{tenantId:ctx.tenantId,...(b.channelIds==='all'?{}:{channelId:{in:b.channelIds}})}}}));
+  const portfolio={OR:[{ownerMembershipId:ctx.membershipId},{serviceOwnerMembershipId:ctx.membershipId},{servicePlans:{some:{tenantId:ctx.tenantId,OR:[{ownerMembershipId:ctx.membershipId},{tasks:{some:{assigneeMembershipId:ctx.membershipId}}}]}}},{salesOpportunities:{some:{tenantId:ctx.tenantId,OR:[{ownerMembershipId:ctx.membershipId},{participantMembershipIds:{array_contains:[ctx.membershipId]}}]}}}]};
+  // Ownership is attached to each role's scope; manager/viewer elsewhere cannot widen it.
+  const OR=bindings.map(b=>({...(b.orgUnitIds==='all'?{}:{orgUnitId:{in:b.orgUnitIds}}),identities:{some:{tenantId:ctx.tenantId,...(b.channelIds==='all'?{}:{channelId:{in:b.channelIds}})}},...(b.portfolioOnly?{AND:[portfolio]}:{})}));
   const where:any={tenantId:ctx.tenantId,OR:OR.length?OR:[{id:'__none__'}]};
-  const pres=prerequisite[permission]??[];if(pres.length)where.AND=await Promise.all(pres.map(p=>this.customerWhere(ctx,p,tx)));
+  const pres=prerequisite[permission]??[];if(pres.length)where.AND=[...where.AND??[],...await Promise.all(pres.map(p=>this.customerWhere(ctx,p,tx)))];
   return where;
  }
  async customer(ctx:RequestContext,id:string,permission='crm.customer.read',tx:Db=this.db){

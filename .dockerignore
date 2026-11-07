@@ -12,3 +12,6 @@ var
 .playwright-cli
 output
 **/*.tsbuildinfo
+
+# Local public engineering originals are not application build input.
+test-corpus/

@@ -1,24 +1,30 @@
 /* Shared application identity and launcher. Business menus remain inside each app. */
-.application-launcher { flex:none; min-width:0; margin:0 4px 12px; }
-.application-trigger { display:flex; align-items:center; gap:9px; width:100%; min-height:62px; padding:10px; color:var(--text); background:var(--surface,#fff); border:1px solid var(--border); border-radius:12px; text-align:left; box-shadow:none; }
+.application-launcher { flex:none; min-width:0; margin:0 4px 8px; }
+.application-trigger { display:flex; align-items:center; gap:8px; width:100%; min-height:40px; padding:4px 10px; color:var(--text); background:var(--surface); border:1px solid var(--border); border-radius:9px; text-align:left; box-shadow:none; }
 .application-trigger:hover,.application-trigger[aria-expanded=true] { background:var(--brand-soft); border-color:var(--brand); }
 .application-trigger>svg { flex:none; color:var(--hint); }
+.application-trigger .application-icon { width:24px; height:24px; border-radius:7px; }
+.application-trigger .application-icon svg.brand-logo { width:18px; height:18px; }
 .application-icon { width:36px; height:36px; flex:none; display:inline-flex; align-items:center; justify-content:center; background:var(--brand-soft); color:var(--brand); border:1px solid var(--border); border-radius:11px; }
 .application-icon svg { width:20px; height:20px; }
-.application-icon-crm { background:var(--brand); color:white; border-color:var(--brand); }
+.application-icon-crm { background:var(--brand); color:var(--on-primary); border-color:var(--brand); }
 .application-trigger-copy,.application-choice-copy { display:flex; flex-direction:column; gap:3px; flex:1; min-width:0; }
-.application-trigger-copy strong { font-size:14px; font-weight:600; white-space:nowrap; }
+.application-trigger-copy strong { font-size:14px; font-weight:600; line-height:20px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .application-trigger-copy small { font-size:11px; color:var(--hint); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.application-picker { position:fixed; inset:76px auto auto 16px; margin:0; padding:0; width:400px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 96px); color:var(--text); background:white; border:1px solid var(--border); border-radius:20px; box-shadow:0 16px 60px #20253526; overflow:hidden; }
+.application-picker { position:fixed; inset:76px auto auto 16px; margin:0; padding:0; width:400px; max-width:calc(100vw - 32px); max-height:calc(100dvh - 96px); background:transparent; border:1px solid var(--border); border-radius:20px; box-shadow:0 16px 60px #20253526; overflow:hidden; }
 .application-picker[open] { display:flex; flex-direction:column; }
 .application-picker::backdrop { background:#20253524; }
+:root[data-theme="dark"] .application-picker::backdrop { background:#080a1080; }
+/* Paint the entire panel on the themed surface inside the native dialog. */
+.application-picker-surface { display:flex; flex-direction:column; min-height:0; background-color:var(--surface); color:var(--text); }
 .application-picker-heading { display:flex; align-items:flex-start; justify-content:space-between; gap:12px; padding:22px 20px 16px; flex:none; }
 .application-picker-heading h2 { font-size:18px; line-height:26px; margin:0; }
 .application-picker-heading p { margin:4px 0 0; font-size:12px; color:var(--hint); }
 .application-picker-heading button { display:grid; place-items:center; flex:none; width:40px; height:40px; min-height:40px; padding:0; border:0; background:transparent; color:var(--muted); border-radius:8px; }
+.application-picker-heading button:hover { background:var(--control-hover); color:var(--text); }
 .application-search { display:flex; align-items:center; gap:8px; margin:0 20px 8px; padding:0 12px; background:var(--canvas); border:1px solid var(--border); border-radius:10px; color:var(--hint); flex:none; }
-.application-search:focus-within { border-color:var(--brand); outline:2px solid var(--brand-soft); }
 .application-picker .application-search input:not([type=checkbox]):not([type=radio]) { min-width:0; width:100%; height:42px; padding:0; border:0; box-shadow:none; outline:0; background:transparent; font-size:14px; }
+.application-picker .application-search input::placeholder { color:var(--hint); opacity:1; }
 .application-picker-body { overflow:auto; overscroll-behavior:contain; padding:0 12px 16px; min-height:0; }
 .application-picker-body section { margin:16px 0 0; }
 .application-picker-body h3 { margin:0 8px 10px; color:var(--hint); font-size:12px; font-weight:400; }
@@ -29,7 +35,8 @@
 .application-recents strong { font-size:12px; font-weight:500; }
 .application-recents small { color:var(--brand); font-size:11px; }
 .application-choice { display:flex; align-items:center; gap:12px; padding:14px 10px; min-height:76px; color:var(--text); border:1px solid transparent; border-radius:12px; text-decoration:none; }
-.application-choice:hover,.application-choice.is-current { background:var(--brand-soft); }
+.application-choice:hover { background:var(--control-hover); }
+.application-choice.is-current { background:var(--brand-soft); }
 .application-choice-copy strong { font-size:15px; font-weight:500; }
 .application-choice-copy small { font-size:12px; color:var(--muted); line-height:18px; }
 .application-current,.application-enter { display:inline-flex; align-items:center; gap:4px; flex:none; font-size:12px; color:var(--brand); }
@@ -42,7 +49,6 @@
   .suite-topbar-application { display:block; flex:none; }
   .application-launcher.is-compact { margin:0; }
   .is-compact .application-trigger { min-height:40px; padding:4px 7px; gap:5px; border-radius:20px; }
-  .is-compact .application-trigger .application-icon { width:24px; height:24px; border-radius:8px; }
   .is-compact .application-trigger .application-icon svg { width:15px; height:15px; }
   .is-compact .application-trigger-copy strong { font-size:12px; }
   .is-compact .application-trigger>svg { width:12px; }

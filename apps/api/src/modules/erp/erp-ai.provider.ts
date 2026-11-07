@@ -1,3 +1,4 @@
+import {ErpIntakeSkill} from './erp-intake.skill';
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import type { AppAiProvider, AiResourceFacts } from '../ai/app-ai-provider';
 import { PrismaService } from '../prisma.service';
@@ -53,6 +54,7 @@ export class ErpAiProvider implements AppAiProvider {
   }
 
   constructor(
+    private readonly intakeSkill:ErpIntakeSkill,
     private readonly db: PrismaService,
     private readonly auth: AuthService,
     private readonly draftSkill: ErpDraftSkill,
@@ -151,6 +153,8 @@ export class ErpAiProvider implements AppAiProvider {
     const result=await this.replenishment.facts(ctx);
     return result.items.map(x=>({...x,quantity:x.onHand,reorderPoint:x.target>0?x.target-1:0,suggestedMinimum:x.suggestedQty,status:'needs_purchase',source:{appId:this.appId,type:'inventory',id:x.productId,version:x.balanceVersion}}));
   }
+
+  async intake(ctx:RequestContext,body:unknown){return this.intakeSkill.intake(ctx,body);}
 
   async extract(ctx: RequestContext, body: unknown) {
     return this.draftSkill.extract(ctx, body);

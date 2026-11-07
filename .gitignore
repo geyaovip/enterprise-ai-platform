@@ -41,3 +41,6 @@ storage/
 *.key
 .DS_Store
 .playwright-cli/
+
+# Public engineering corpus: keep original files locally; tracked downloader/docs reproduce it.
+test-corpus/public-bom/

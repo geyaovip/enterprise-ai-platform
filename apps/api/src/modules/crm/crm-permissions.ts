@@ -1,10 +1,16 @@
 import {z} from 'zod';
-export const CRM_ROLES=['manager','operator','analyst','viewer'] as const;
+export const CRM_ROLES=['manager','operator','analyst','viewer','sales','csm'] as const;
 export const EXTRA_PERMISSIONS=['crm.customer.contact.read','crm.customer.export','crm.import.confirm','crm.import.compensate','crm.audit.read'] as const;
 const read=['crm.customer.read','crm.segment.read','crm.task.read','crm.analytics.read'];
 export const ROLE_PERMISSIONS:Record<string,string[]>={manager:[...read,'crm.customer.write','crm.segment.write','crm.task.write','crm.task.confirm','crm.task.execute','crm.import.read','crm.import.write','crm.import.confirm','crm.ai.use','crm.audit.read'],operator:[...read,'crm.customer.write','crm.segment.write','crm.task.write','crm.task.execute','crm.ai.use'],analyst:[...read,'crm.segment.write','crm.import.read','crm.import.write','crm.ai.use'],viewer:read};
+const follow=['crm.followup.read','crm.followup.write'];
+ROLE_PERMISSIONS.manager.push(...follow,'crm.sales.read','crm.sales.write','crm.sales.manage','crm.service.read','crm.service.write','crm.service.review','crm.customer.assign');
+ROLE_PERMISSIONS.manager.push('crm.sales.renewal');
+ROLE_PERMISSIONS.operator.push(...follow);
+ROLE_PERMISSIONS.sales=['crm.customer.read','crm.customer.write',...follow,'crm.sales.read','crm.sales.write'];
+ROLE_PERMISSIONS.csm=['crm.customer.read','crm.sales.renewal',...follow,'crm.service.read','crm.service.write'];
 export const CRM_PERMISSIONS=[...new Set([...Object.values(ROLE_PERMISSIONS).flat(),...EXTRA_PERMISSIONS,'crm.settings.manage'])];
-export const CRM_MANIFEST={appId:'crm',displayName:'电商 CRM',routePrefix:'/crm',permissions:CRM_PERMISSIONS,aiCapabilities:['conversation','customer_insight','segment_advisor','retention_plan','controlled_actions'],defaultAgentId:'crm.assistant'};
+export const CRM_MANIFEST={appId:'crm',displayName:'客户 CRM',routePrefix:'/crm',permissions:CRM_PERMISSIONS,aiCapabilities:['conversation','customer_insight','segment_advisor','retention_plan','controlled_actions'],defaultAgentId:'crm.assistant'};
 export const bindingSchema=z.object({orgUnitIds:z.union([z.literal('all'),z.array(z.uuid()).min(1).max(100)]),includeDescendants:z.boolean().default(false),channelIds:z.union([z.literal('all'),z.array(z.uuid()).min(1).max(100)])}).strict();
 export type ScopeBinding=z.infer<typeof bindingSchema>;
 export const ALL_SCOPE:ScopeBinding={orgUnitIds:'all',includeDescendants:false,channelIds:'all'};

@@ -15,7 +15,9 @@ export function ContextLink(props: LinkProps) {
 /** Store UI filters only. Data and permission checks always come from the API. */
 export function useViewState<T>(field: string, initial: T) {
   const location = useLocation();
-  const key = 'suite:view:' + sessionStorage.getItem('suite:view-user') + ':' + location.pathname + ':' + field;
+  let user = 'anonymous';
+  try { user = sessionStorage.getItem('suite:view-user') ?? 'anonymous'; } catch { /* Filters remain usable when browser storage is blocked. */ }
+  const key = 'suite:view:' + user + ':' + location.pathname + ':' + field;
   const [value, set] = useState<T>(() => {
     if(new URLSearchParams(location.search).has('focus') || ['query','search','page'].includes(field)&&new URLSearchParams(location.search).has('q'))return initial;
     try {
@@ -23,6 +25,7 @@ export function useViewState<T>(field: string, initial: T) {
       if (raw === null) return initial;
       const saved = JSON.parse(raw);
       if (saved === null || typeof saved !== typeof initial || Array.isArray(saved) !== Array.isArray(initial)) return initial;
+      if (field === 'page' && (!Number.isSafeInteger(saved) || saved < 1)) return initial;
       if (typeof initial === 'object' && initial !== null && !Array.isArray(initial)) {
         // Older or malformed filter state must not break the page or erase defaults.
         const restored = { ...initial };

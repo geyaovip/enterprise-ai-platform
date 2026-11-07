@@ -41,13 +41,14 @@ export function ApplicationSwitcher({ apps, currentId, recentIds, compact = fals
       const box = event.currentTarget.getBoundingClientRect();
       if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) setOpen(false);
     }}>
-      <header className="application-picker-heading"><div><h2 id={`${id}-title`}>切换应用</h2></div><button type="button" aria-label="关闭应用选择" onClick={() => setOpen(false)}><X size={18} aria-hidden="true"/></button></header>
-      <label className="application-search"><Search size={18} aria-hidden="true"/><input ref={search} aria-label="搜索应用" placeholder="搜索应用" value={query} onChange={event => setQuery(event.target.value)}/></label>
-      <div className="application-picker-body">
-        {recent.length > 0 && <section aria-label="最近使用"><h3>最近使用</h3><div className="application-recents">{recent.map(app => <Link key={app.id} to={app.href} onClick={() => setOpen(false)} aria-label={`进入${app.name}`}><span className={`application-icon application-icon-${app.id}`} aria-hidden="true">{app.icon}</span><strong>{app.name}</strong>{app.id === currentId && <small>当前使用</small>}</Link>)}</div></section>}
-        <section aria-label="企业已开通"><h3>{query.trim() ? `搜索结果 · ${matches.length}` : `企业已开通 · ${apps.length}`}</h3>{matches.map(row)}{!matches.length && <p className="application-no-results" role="status">没有找到相关应用，请试试其他名称</p>}</section>
+      <div className="application-picker-surface">
+        <header className="application-picker-heading"><div><h2 id={`${id}-title`}>切换应用</h2></div><button type="button" aria-label="关闭应用选择" onClick={() => setOpen(false)}><X size={18} aria-hidden="true"/></button></header>
+        <label className="application-search"><Search size={18} aria-hidden="true"/><input ref={search} aria-label="搜索应用" placeholder="搜索应用" value={query} onChange={event => setQuery(event.target.value)}/></label>
+        <div className="application-picker-body">
+          {recent.length > 0 && <section aria-label="最近使用"><h3>最近使用</h3><div className="application-recents">{recent.map(app => <Link key={app.id} to={app.href} onClick={() => setOpen(false)} aria-label={`进入${app.name}`}><span className={`application-icon application-icon-${app.id}`} aria-hidden="true">{app.icon}</span><strong>{app.name}</strong>{app.id === currentId && <small>当前使用</small>}</Link>)}</div></section>}
+          <section aria-label="企业已开通"><h3>{query.trim() ? `搜索结果 · ${matches.length}` : `企业已开通 · ${apps.length}`}</h3>{matches.map(row)}{!matches.length && <p className="application-no-results" role="status">没有找到相关应用，请试试其他名称</p>}</section>
+        </div>
       </div>
-      
     </dialog>, document.body)}
   </div>;
 }

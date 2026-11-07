@@ -14,3 +14,10 @@ docker compose --env-file .env.production -f infrastructure/compose.production.y
   -C /var/lib/suite/knowledge -cf - . > "$knowledge_backup"
 tar -tf "$knowledge_backup" > /dev/null
 shasum -a 256 "$knowledge_backup"
+
+# Brand content originals, generated backgrounds and delivery bundles share their own private volume.
+content_backup="output/backups/content-$(date -u +%Y%m%dT%H%M%SZ).tar"
+docker compose --env-file .env.production -f infrastructure/compose.production.yaml run --rm --no-deps -T --entrypoint tar api \
+  -C /var/lib/suite/content -cf - . > "$content_backup"
+tar -tf "$content_backup" > /dev/null
+shasum -a 256 "$content_backup"

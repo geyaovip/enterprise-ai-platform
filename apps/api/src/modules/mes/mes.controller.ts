@@ -12,11 +12,15 @@ import {
 import type { Request } from "express";
 import { AuthService } from "../platform/auth.service";
 import { MesService } from "./mes.service";
+import { BomVisionService } from './bom-vision.service';
+import { MesBomIntakeService } from './bom-intake.service';
 @Controller("api/v1/tenants/:tenantKey/apps/mes")
 export class MesController {
   constructor(
     readonly auth: AuthService,
     readonly mes: MesService,
+    readonly bomIntake: MesBomIntakeService,
+    readonly bomVision: BomVisionService,
   ) {}
   context(r: Request) {
     return this.auth.context(r, r.params.tenantKey as string, "mes");
@@ -37,7 +41,7 @@ export class MesController {
     return this.context(r).then((c) => this.mes.dashboard(c));
   }
   @Get("audit") audit(@Req() r: Request) {
-    return this.context(r).then((c) => this.mes.auditList(c));
+    return this.context(r).then((c) => this.mes.auditList(c,r.query));
   }
   @Get("materials") materials(@Req() r: Request, @Query() q: any) {
     return this.context(r).then((c) => this.mes.list(c, "materials", q));
@@ -58,6 +62,18 @@ export class MesController {
   @Post("boms") bomCreate(@Req() r: Request, @Body() b: unknown) {
     return this.context(r).then((c) => this.mes.saveBom(c, undefined, b));
   }
+  @Get('boms/intake/options') bomIntakeOptions(@Req() r:Request){return this.context(r).then(c=>this.bomIntake.options(c));}
+  @Post('boms/intake/page') bomPagePreview(@Req() r:Request,@Body() b:unknown){return this.context(r).then(c=>this.bomIntake.pagePreview(c,b));}
+  @Post('boms/intake') bomReadDocuments(@Req() r:Request,@Body() b:unknown){return this.context(r).then(c=>this.bomIntake.intake(c,b));}
+  @Post('boms/intake/jobs') bomJobCreate(@Req() r:Request,@Body() b:unknown){return this.context(r).then(c=>this.bomVision.submit(c,b));}
+  @Get('boms/intake/jobs') bomJobs(@Req() r:Request){return this.context(r).then(c=>this.bomVision.list(c));}
+  @Get('boms/intake/history') bomHistory(@Req() r:Request,@Query() q:unknown){return this.context(r).then(c=>this.bomVision.history(c,q));}
+  @Get('boms/intake/jobs/:jobId') bomJob(@Req() r:Request,@Param('jobId') id:string){return this.context(r).then(c=>this.bomVision.status(c,id));}
+  @Put('boms/intake/jobs/:jobId/review') bomReview(@Req() r:Request,@Param('jobId') id:string,@Body() b:unknown){return this.context(r).then(c=>this.bomVision.saveReview(c,id,b));}
+  @Post('boms/intake/jobs/:jobId/cancel') bomJobCancel(@Req() r:Request,@Param('jobId') id:string){return this.context(r).then(c=>this.bomVision.cancel(c,id));}
+  @Post('boms/intake/jobs/:jobId/recheck') bomJobRecheck(@Req() r:Request,@Param('jobId') id:string,@Body() b:unknown){return this.context(r).then(c=>this.bomVision.recheck(c,id,b));}
+  @Get('boms/intake/jobs/:jobId/sources/:fileId') bomJobSource(@Req() r:Request,@Param('jobId') id:string,@Param('fileId') file:string){return this.context(r).then(c=>this.bomVision.source(c,id,file));}
+  @Get('boms/intake/jobs/:jobId/sources/:fileId/pages/:page') bomJobPage(@Req() r:Request,@Param('jobId') id:string,@Param('fileId') file:string,@Param('page') page:string){return this.context(r).then(c=>this.bomVision.source(c,id,file,Number(page)));}
   @Get("boms/:id") bom(@Req() r: Request, @Param("id") id: string) {
     return this.context(r).then((c) => this.mes.get(c, "bom", id));
   }

@@ -4,11 +4,112 @@ generator client {
   moduleFormat = "cjs"
 }
 
+// WorkBuddy: a separate grant for each application/resource and current member.
+model ConnectorClient {
+  id String @id @default(uuid())
+  name String
+  redirectUris Json
+  createdAt DateTime @default(now())
+}
+
+model ConnectorAuthorization {
+  id String @id @default(uuid())
+  clientId String
+  redirectUri String
+  appId String
+  resource String
+  scopes Json
+  state String?
+  challenge String
+  consentUserId String?
+  consentHash String?
+  codeHash String? @unique
+  grantId String?
+  consumedAt DateTime?
+  deniedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([expiresAt])
+}
+
+model ConnectorGrant {
+  id String @id @default(uuid())
+  clientId String
+  userId String
+  tenantId String
+  membershipId String
+  appId String
+  resource String
+  scopes Json
+  expiresAt DateTime
+  revokedAt DateTime?
+  lastUsedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([userId, createdAt])
+  @@index([tenantId, membershipId])
+}
+
+model ConnectorToken {
+  id String @id @default(uuid())
+  hash String @unique
+  grantId String
+  kind String
+  expiresAt DateTime
+  usedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([grantId, kind])
+  @@index([expiresAt])
+}
+
+model ConnectorAction {
+  id String @id @default(uuid())
+  grantId String
+  tenantId String
+  userId String
+  membershipId String
+  appId String
+  command String
+  requestKey String
+  input Json
+  preview Json
+  fingerprint String
+  requestFingerprint String
+  status String @default("pending")
+  version Int @default(1)
+  result Json?
+  confirmedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@unique([grantId, requestKey])
+  @@index([tenantId, userId, createdAt])
+}
+
+model ConnectorRate {
+  key String @id
+  count Int @default(1)
+  expiresAt DateTime
+}
+
 datasource db {
   provider = "postgresql"
 }
 
 model Tenant {
+  contentCanvasRows ContentCanvas[]
+  contentGrantRows ContentGrant[]
+  contentSettingsRows ContentSettings[]
+  contentDocumentRows ContentDocument[]
+  contentDocumentVersionRows ContentDocumentVersion[]
+  contentProjectRows ContentProject[]
+  contentAssetRows ContentAsset[]
+  contentArtifactRows ContentArtifact[]
+  contentArtifactVersionRows ContentArtifactVersion[]
+  contentBatchRows ContentBatch[]
+  contentGenerationItemRows ContentGenerationItem[]
+  contentProviderAttemptRows ContentProviderAttempt[]
+  contentExportRows ContentExport[]
+  contentWorkDraftRows ContentWorkDraft[]
+  contentCopySuggestionRows ContentCopySuggestion[]
   id        String              @id @default(uuid())
   slug      String              @unique
   name      String
@@ -30,6 +131,7 @@ model User {
   account      String?      @unique
   name         String
   passwordHash String
+  emailVerifiedAt DateTime?
   platformRole String?
   active       Boolean      @default(true)
   createdAt    DateTime     @default(now())
@@ -141,6 +243,7 @@ model ChannelConnection {
   connectedAt      DateTime?
   createdAt        DateTime          @default(now())
   updatedAt        DateTime          @updatedAt
+  cursor           String?
   identities       ChannelIdentity[]
   deliveries       ChannelDelivery[]
 
@@ -155,6 +258,8 @@ model ChannelConnectAttempt {
   provider     String
   status       String    @default("starting")
   qrUrl        String?
+  stateCiphertext String?
+  pollAfter    DateTime?
   expiresAt    DateTime?
   errorCode    String?
   createdAt    DateTime  @default(now())
@@ -170,6 +275,7 @@ model ChannelIdentity {
   connection     ChannelConnection @relation(fields: [connectionId], references: [id])
   membershipId   String
   externalUserId String
+  appId          String            @default("erp")
   createdAt      DateTime          @default(now())
 
   @@unique([connectionId, membershipId])
@@ -196,10 +302,11 @@ model ChannelChatSession {
   connectionId   String
   membershipId   String
   externalChatId String
+  appId          String   @default("erp")
   conversationId String
   createdAt      DateTime @default(now())
 
-  @@unique([connectionId, externalChatId, membershipId])
+  @@unique([connectionId, externalChatId, membershipId, appId])
 }
 
 model ChannelInbound {
@@ -214,6 +321,10 @@ model ChannelInbound {
   attempts      Int      @default(0)
   nextAttemptAt DateTime @default(now())
   replyText     String?
+  contextCiphertext String?
+  replyMembershipId String?
+  replyAppId    String?
+  aiStartedAt   DateTime?
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -724,6 +835,20 @@ model AiUsage {
   @@index([tenantId, appId, createdAt])
 }
 
+// Independent of conversations/memberships: deleting a conversation or leaving a
+// tenant must not restore an account's lifetime trial allowance.
+model AiChatTurn {
+  userId    String
+  turnKey   String
+  taskId    String?  @unique
+  status    String   @default("reserved")
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([userId, turnKey])
+  @@index([userId, status])
+}
+
 model AiTask {
   id           String    @id @default(uuid())
   tenantId     String
@@ -845,12 +970,14 @@ model AiModelUsage {
   cachedInputTokens Int?
   cacheWriteTokens Int?
   reasoningTokens Int?
+  reservedTokens Int?
   purpose String
   errorCode String?
   createdAt DateTime @default(now())
   finishedAt DateTime?
   @@index([tenantId, appId, createdAt])
   @@index([model, createdAt])
+  @@index([requestId, source])
 }
 
 model KnowledgeSpace {
@@ -933,6 +1060,7 @@ model KnowledgeIndex {
   status             String                   @default("queued")
   errorCode          String?
   attempts           Int                      @default(0)
+  modelAttemptId     String                   @default(dbgenerated("gen_random_uuid()::text"))
   startedAt          DateTime?
   nextAttemptAt      DateTime?
   updatedAt          DateTime                 @updatedAt
@@ -1523,11 +1651,23 @@ model CrmScopeRevision {
   @@index([tenantId,metricStatus])
 }
 model CrmCustomer {
+  taskOutcomeLogs CrmOperationTaskLog[]
   id String @id @default(uuid())
   tenantId String
   orgUnitId String
   displayName String
   status String @default("active")
+  kind String @default("consumer")
+  ownerMembershipId String?
+  serviceOwnerMembershipId String?
+  registrationId String?
+  industry String?
+  region String?
+  businessContacts CrmBusinessContact[]
+  salesOpportunities CrmOpportunity[]
+  servicePlans CrmServicePlan[]
+  serviceRisks CrmServiceRisk[]
+  convertedLeads CrmLead[]
   sourceCreatedAt DateTime?
   sourceUpdatedAt DateTime?
   sourceHash String
@@ -1540,8 +1680,11 @@ model CrmCustomer {
   tags CrmCustomerTagAssignment[]
   snapshots CrmMetricSnapshot[]
   segmentMembers CrmSegmentMember[]
+  @@unique([tenantId,registrationId])
   @@unique([id,tenantId])
   @@index([tenantId,orgUnitId,status])
+  @@index([tenantId,ownerMembershipId])
+  @@index([tenantId,serviceOwnerMembershipId])
 }
 model CrmCustomerIdentity {
   id String @id @default(uuid())
@@ -1707,6 +1850,7 @@ model CrmOperationTask {
   tenantId String
   title String
   goal String @default("")
+  trackCustomers Boolean @default(false)
   creatorMembershipId String
   ownerMembershipId String?
   status String @default("draft")
@@ -1764,7 +1908,13 @@ model CrmOperationTaskLog {
   summary String
   checklistItemIds Json
   correctsLogId String?
+  customerId String?
+  customer CrmCustomer? @relation(fields:[customerId,tenantId],references:[id,tenantId],onDelete:Restrict,onUpdate:Cascade,map:"CrmOperationTaskLog_customer_tenant_fkey")
+  outcome String?
+  outcomeVersion Int?
+  nextAt DateTime?
   createdAt DateTime @default(now())
+  @@unique([tenantId,taskId,customerId,outcomeVersion])
   @@index([tenantId,taskId,occurredAt])
 }
 model CrmImportBatch {
@@ -1993,4 +2143,601 @@ model MesCommandReceipt {
   result Json
   createdAt DateTime @default(now())
   @@unique([tenantId, membershipId, command, requestKey])
+}
+
+// One-time email challenges contain only keyed digests, never plaintext codes.
+model AuthEmailChallenge {
+  id String @id @default(uuid())
+  email String
+  codeHash String
+  attempts Int @default(0)
+  sentAt DateTime?
+  usedAt DateTime?
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+  @@index([email, createdAt])
+  @@index([expiresAt])
+}
+model AuthEmailRate {
+  key String @id
+  count Int @default(1)
+  expiresAt DateTime
+  @@index([expiresAt])
+}
+
+
+// Unified CRM sales and customer service. No relations to ERP internal tables.
+model CrmLead {
+  id String @id @default(uuid())
+  tenantId String
+  orgUnitId String
+  channelId String
+  name String
+  normalizedName String
+  companyName String?
+  contactCiphertext String?
+  contactMasked String?
+  contactDigest String?
+  source String
+  requirement String
+  status String @default("new")
+  ownerMembershipId String?
+  customerId String?
+  customer CrmCustomer? @relation(fields:[customerId,tenantId],references:[id,tenantId])
+  convertedOpportunityId String?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([id,tenantId])
+  @@index([tenantId,orgUnitId,channelId,status])
+  @@index([tenantId,ownerMembershipId,status])
+  @@index([tenantId,contactDigest])
+  @@index([tenantId,normalizedName])
+}
+model CrmSalesPool {
+  id String @id @default(uuid())
+  tenantId String
+  orgUnitId String
+  channelId String
+  name String
+  memberIds Json
+  nextIndex Int @default(0)
+  active Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@index([tenantId,orgUnitId,channelId])
+}
+model CrmBusinessContact {
+  id String @id @default(uuid())
+  tenantId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId])
+  name String
+  title String?
+  contactCiphertext String
+  maskedValue String
+  purpose String
+  preferred Boolean @default(false)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@index([tenantId,customerId])
+}
+model CrmOpportunity {
+  id String @id @default(uuid())
+  tenantId String
+  orgUnitId String
+  channelId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId])
+  name String
+  kind String @default("new")
+  stage String @default("discovery")
+  ownerMembershipId String
+  participantMembershipIds Json
+  currency String @default("CNY")
+  estimatedAmount Decimal @db.Decimal(18,2)
+  probability Int @default(10)
+  expectedCloseAt DateTime?
+  actualAmount Decimal? @db.Decimal(18,2)
+  actualCloseAt DateTime?
+  lostReason String?
+  nextAction String?
+  nextActionAt DateTime?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@unique([id,tenantId])
+  @@index([tenantId,orgUnitId,channelId,stage])
+  @@index([tenantId,ownerMembershipId])
+}
+model CrmFollowUp {
+  id String @id @default(uuid())
+  tenantId String
+  orgUnitId String
+  channelId String
+  targetType String
+  targetId String
+  authorMembershipId String
+  type String
+  content String
+  occurredAt DateTime
+  nextAt DateTime?
+  doneAt DateTime?
+  correctsId String?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@index([tenantId,targetType,targetId])
+  @@index([tenantId,authorMembershipId,nextAt])
+}
+model CrmServicePlan {
+  id String @id @default(uuid())
+  tenantId String
+  orgUnitId String
+  channelId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId])
+  title String
+  ownerMembershipId String
+  startsAt DateTime
+  endsAt DateTime
+  status String @default("active")
+  note String?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  tasks CrmServiceTask[]
+  @@unique([id,tenantId])
+  @@index([tenantId,orgUnitId,channelId,status])
+}
+model CrmServiceTask {
+  id String @id @default(uuid())
+  tenantId String
+  planId String
+  plan CrmServicePlan @relation(fields:[planId,tenantId],references:[id,tenantId])
+  title String
+  assigneeMembershipId String
+  dueAt DateTime
+  status String @default("open")
+  completionNote String?
+  reviewReason String?
+  submittedBy String?
+  reviewedBy String?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@index([tenantId,assigneeMembershipId,status])
+  @@index([tenantId,planId])
+}
+model CrmServiceRisk {
+  id String @id @default(uuid())
+  tenantId String
+  orgUnitId String
+  channelId String
+  customerId String
+  customer CrmCustomer @relation(fields:[customerId,tenantId],references:[id,tenantId])
+  title String
+  severity String
+  detail String
+  ownerMembershipId String
+  status String @default("open")
+  resolution String?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  closedAt DateTime?
+  @@index([tenantId,orgUnitId,channelId,status])
+}
+
+// Content owns marketing snapshots, never ERP product masters.
+model ContentGrant {
+  id String @id @default(uuid())
+  tenantId String
+  membershipId String
+  role String
+  @@unique([tenantId, membershipId])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentSettings {
+  tenantId String @id
+  reviewRequired Boolean @default(true)
+  maxBatch Int @default(12)
+  monthlyImageLimit Int @default(100)
+  version Int @default(1)
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentDocument {
+  id String @id @default(uuid())
+  tenantId String
+  kind String
+  name String
+  version Int @default(1)
+  publishedVersion Int?
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, kind, deletedAt])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentDocumentVersion {
+  id String @id @default(uuid())
+  tenantId String
+  documentId String
+  version Int
+  data Json
+  createdBy String
+  publishedAt DateTime?
+  createdAt DateTime @default(now())
+  @@unique([tenantId, documentId, version])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentProject {
+  canvas ContentCanvas?
+  id String @id @default(uuid())
+  tenantId String
+  name String
+  ownerId String
+  visibility String @default("private")
+  participants String[]
+  brief Json
+  version Int @default(1)
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, deletedAt, updatedAt])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentCanvas {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String @unique
+  version Int @default(1)
+  data Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  project ContentProject @relation(fields: [projectId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  @@index([tenantId, updatedAt])
+}
+model ContentAsset {
+  id String @id @default(uuid())
+  tenantId String
+  ownerId String
+  projectId String?
+  shared Boolean @default(false)
+  filename String
+  mime String
+  bytes Int
+  sha256 String
+  width Int
+  height Int
+  deletedAt DateTime?
+  createdAt DateTime @default(now())
+  @@index([tenantId, projectId, deletedAt])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentArtifact {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  name String
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@index([tenantId, projectId])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentArtifactVersion {
+  id String @id @default(uuid())
+  tenantId String
+  artifactId String
+  version Int
+  data Json
+  status String @default("draft")
+  createdBy String
+  submittedBy String?
+  reviewedBy String?
+  reviewNote String?
+  reviewPolicyVersion Int?
+  createdAt DateTime @default(now())
+  @@unique([tenantId, artifactId, version])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentBatch {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  membershipId String
+  userId String
+  requestKey String
+  fingerprint String
+  snapshot Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, requestKey])
+  @@index([tenantId, projectId])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentGenerationItem {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  batchId String
+  status String @default("queued")
+  input Json
+  artifactId String?
+  errorCode String?
+  lease String?
+  heartbeatAt DateTime?
+  cancelRequested Boolean @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([status, createdAt])
+  @@index([tenantId, batchId])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentProviderAttempt {
+  id String @id @default(uuid())
+  tenantId String
+  itemId String @unique
+  model String
+  status String @default("prepared")
+  externalId String?
+  resultAssetId String?
+  usage Json?
+  errorCode String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId, createdAt])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+model ContentExport {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  membershipId String
+  requestKey String
+  fingerprint String
+  status String @default("preparing")
+  manifest Json
+  bytes Int?
+  userId String?
+  lease String?
+  heartbeatAt DateTime?
+  errorCode String?
+  createdAt DateTime @default(now())
+  expiresAt DateTime
+  @@unique([tenantId, requestKey])
+  @@index([status, createdAt])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model ContentWorkDraft {
+  id String @id @default(uuid())
+  tenantId String
+  artifactId String
+  membershipId String
+  baseVersion Int
+  projectVersion Int
+  revision Int @default(1)
+  requestKey String
+  fingerprint String
+  data Json
+  updatedAt DateTime @updatedAt
+  @@unique([tenantId, artifactId, membershipId])
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+model ContentCopySuggestion {
+  id String @id @default(uuid())
+  tenantId String
+  artifactId String
+  membershipId String
+  baseVersion Int
+  projectVersion Int
+  snapshotHash String
+  requestKey String
+  fingerprint String
+  candidates Json
+  createdAt DateTime @default(now())
+  @@unique([tenantId, requestKey])
+  @@index([tenantId, artifactId, membershipId, createdAt], map: "ContentCopySuggestion_scope_created_idx")
+  tenant Tenant @relation(fields: [tenantId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+}
+
+// D-151: GEO native application. New tenant-scoped data; no legacy GEO identities.
+model GeoGrant {
+  id String @id @default(uuid())
+  tenantId String
+  membershipId String
+  role String
+  version Int @default(1)
+  @@unique([tenantId,membershipId])
+}
+model GeoSettings {
+  tenantId String @id
+  dailyBudgetMicros Int @default(20000000)
+  version Int @default(1)
+}
+model GeoProject {
+  id String @id @default(uuid())
+  tenantId String
+  name String
+  brandName String
+  aliases String[]
+  competitors String[]
+  website String?
+  country String @default("CN")
+  language String @default("zh-CN")
+  timezone String @default("Asia/Shanghai")
+  active Boolean @default(true)
+  version Int @default(1)
+  createdByMembershipId String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  questions GeoQuestion[]
+  analyses GeoAnalysis[]
+  schedules GeoSchedule[]
+  optimizations GeoOptimization[]
+  @@unique([id,tenantId])
+  @@index([tenantId,active,createdAt])
+}
+model GeoQuestion {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  project GeoProject @relation(fields:[projectId,tenantId],references:[id,tenantId])
+  text String
+  category String @default("品牌认知")
+  nativeWebSearch Boolean @default(false)
+  enabled Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  @@index([tenantId,projectId,enabled])
+}
+model GeoModel {
+  id String @id @default(uuid())
+  tenantId String
+  name String
+  family String
+  enabled Boolean @default(true)
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  versions GeoModelVersion[]
+  @@unique([id,tenantId])
+  @@index([tenantId,enabled])
+}
+model GeoModelVersion {
+  id String @id @default(uuid())
+  tenantId String
+  modelId String
+  model GeoModel @relation(fields:[modelId,tenantId],references:[id,tenantId])
+  revision Int
+  code String
+  apiMode String
+  secretCiphertext String
+  nativeWebSearch Boolean @default(false)
+  inputPriceMicrosPerMillion Int
+  outputPriceMicrosPerMillion Int
+  searchPriceMicros Int @default(0)
+  createdAt DateTime @default(now())
+  @@unique([modelId,revision])
+  @@unique([id,tenantId])
+}
+model GeoAnalysis {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  project GeoProject @relation(fields:[projectId,tenantId],references:[id,tenantId])
+  createdByMembershipId String
+  userId String
+  requestKey String
+  requestHash String
+  status String @default("queued")
+  snapshot Json
+  comparabilityHash String
+  estimatedCostMicros Int
+  actualCostMicros Int?
+  report Json?
+  baselineId String?
+  optimizationId String?
+  cancelRequested Boolean @default(false)
+  leaseUntil DateTime?
+  leaseToken String?
+  errorCode String?
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  finishedAt DateTime?
+  runs GeoRun[]
+  @@unique([id,tenantId])
+  @@unique([tenantId,requestKey])
+  @@index([status,leaseUntil,createdAt])
+  @@index([tenantId,projectId,createdAt])
+}
+model GeoRun {
+  id String @id @default(uuid())
+  tenantId String
+  analysisId String
+  analysis GeoAnalysis @relation(fields:[analysisId,tenantId],references:[id,tenantId])
+  questionId String
+  modelId String
+  modelVersionId String
+  status String @default("queued")
+  attempts Int @default(0)
+  retryAt DateTime?
+  question Json
+  model Json
+  text String?
+  citations Json?
+  parsed Json?
+  validSample Boolean @default(false)
+  inputTokens Int?
+  outputTokens Int?
+  actualCostMicros Int?
+  estimatedCostMicros Int
+  durationMs Int?
+  externalId String?
+  errorCode String?
+  startedAt DateTime?
+  finishedAt DateTime?
+  @@unique([analysisId,questionId,modelId])
+  @@index([tenantId,analysisId,status])
+}
+model GeoSchedule {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  project GeoProject @relation(fields:[projectId,tenantId],references:[id,tenantId])
+  createdByMembershipId String
+  userId String
+  name String
+  active Boolean @default(true)
+  frequency String
+  hour Int
+  minute Int
+  weekday Int @default(1)
+  timezone String
+  questionIds String[]
+  modelIds String[]
+  maxCostMicros Int
+  nextRunAt DateTime
+  version Int @default(1)
+  requestKey String
+  requestHash String
+  createdAt DateTime @default(now())
+  executions GeoScheduleExecution[]
+  @@unique([id,tenantId])
+  @@unique([tenantId,requestKey])
+  @@index([active,nextRunAt])
+}
+model GeoScheduleExecution {
+  id String @id @default(uuid())
+  tenantId String
+  scheduleId String
+  schedule GeoSchedule @relation(fields:[scheduleId,tenantId],references:[id,tenantId])
+  dueAt DateTime
+  status String @default("pending")
+  snapshot Json
+  attempts Int @default(0)
+  retryAt DateTime?
+  analysisId String?
+  errorCode String?
+  leaseUntil DateTime?
+  createdAt DateTime @default(now())
+  @@unique([scheduleId,dueAt])
+  @@index([status,retryAt,leaseUntil])
+}
+model GeoOptimization {
+  id String @id @default(uuid())
+  tenantId String
+  projectId String
+  project GeoProject @relation(fields:[projectId,tenantId],references:[id,tenantId])
+  title String
+  description String
+  baselineId String
+  sourceRunId String?
+  assigneeMembershipId String?
+  evidenceUrl String?
+  dueAt DateTime?
+  status String @default("open")
+  version Int @default(1)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  @@index([tenantId,projectId,status])
+  @@index([tenantId,assigneeMembershipId,status])
 }

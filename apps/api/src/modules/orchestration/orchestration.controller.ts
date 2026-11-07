@@ -18,7 +18,7 @@ export class OrchestrationController{
  constructor(private readonly auth:AuthService,private readonly apps:ApplicationRegistry,private readonly db:PrismaService,private readonly bus:CommandBus,private readonly tasks:TaskService,private readonly collaboration:ApplicationCollaborationService,private readonly commercial:CommercialService,private readonly quotas:QuotaService,private readonly replenishment:ReplenishmentService,private readonly events:OperatingEventService,private readonly ai:AiService){}
  @Get('application-catalog')async applicationCatalog(@Req()r:Request,@Param('tenantKey')key:string){const ctx=await this.auth.context(r,key,'platform');const installed=await this.db.tenantApp.findMany({where:{tenantId:ctx.tenantId}});return this.apps.list().filter(a=>installed.some(i=>i.appId===a.appId&&i.granted)).map(a=>({...a,enabled:installed.find(i=>i.appId===a.appId)?.enabled??false}));}
  @Get('applications')async applications(@Req()r:Request,@Param('tenantKey')key:string){const ctx=await this.auth.context(r,key,'platform');const installed=await this.db.tenantApp.findMany({where:{tenantId:ctx.tenantId,enabled:true,granted:true}});return this.apps.list().filter(a=>installed.some(i=>i.appId===a.appId)).map(a=>({...a,permissions:a.permissions.filter(p=>ctx.permissions.includes(p)),contractVersion:1}));}
- @Get('tasks')async list(@Req()r:Request,@Param('tenantKey')key:string){return this.tasks.list(await this.auth.context(r,key,'platform'));}
+ @Get('tasks')async list(@Req()r:Request,@Param('tenantKey')key:string){return this.tasks.list(await this.auth.context(r,key,'platform'),r.query);}
  @Get('tasks/:id')async task(@Req()r:Request,@Param('tenantKey')key:string,@Param('id')id:string){return this.tasks.get(await this.auth.context(r,key,'platform'),id);}
  @Post('tasks/:id/actions')async action(@Req()r:Request,@Param('tenantKey')key:string,@Param('id')id:string,@Body()body:unknown){return this.tasks.action(await this.auth.context(r,key,'platform'),id,body);}
  @Post('apps/:appId/tasks')async create(@Req()r:Request,@Param('tenantKey')key:string,@Param('appId')appId:string,@Body()body:unknown){return this.tasks.create(await this.auth.context(r,key,appId),body);}
@@ -31,10 +31,11 @@ export class OrchestrationController{
  @Get('erp/replenishment')async facts(@Req()r:Request,@Param('tenantKey')key:string){return this.replenishment.facts(await this.auth.context(r,key,'erp'));}
  @Post('erp/replenishment/plans')async plan(@Req()r:Request,@Param('tenantKey')key:string,@Body()body:unknown){return this.replenishment.plan(await this.auth.context(r,key,'erp'),body);}
  @Post('erp/metrics/query')async metric(@Req()r:Request,@Param('tenantKey')key:string,@Body()body:unknown){return this.replenishment.metric(await this.auth.context(r,key,'erp'),body);}
- @Get('erp/operating-events')async operating(@Req()r:Request,@Param('tenantKey')key:string){return this.events.list(await this.auth.context(r,key,'erp'));}
+ @Get('erp/operating-events')async operating(@Req()r:Request,@Param('tenantKey')key:string){return this.events.list(await this.auth.context(r,key,'erp'),r.query);}
  @Post('erp/operating-events/:id/actions')async operatingAction(@Req()r:Request,@Param('tenantKey')key:string,@Param('id')id:string,@Body()body:unknown){return this.events.action(await this.auth.context(r,key,'erp'),id,body);}
+ @Get('commercial/bills')async commercialBills(@Req()r:Request,@Param('tenantKey')key:string){const ctx=await this.auth.context(r,key,'platform');this.auth.require(ctx,'platform.manage');return this.commercial.bills(ctx.tenantId,r.query);}
  @Get('commercial')async commercialSummary(@Req()r:Request,@Param('tenantKey')key:string){const ctx=await this.auth.context(r,key,'platform');this.auth.require(ctx,'platform.manage');return this.quotas.summary(ctx.tenantId);}
- @Get('support-grants')async support(@Req()r:Request,@Param('tenantKey')key:string){return this.commercial.supportList(await this.auth.context(r,key,'platform'));}
+ @Get('support-grants')async support(@Req()r:Request,@Param('tenantKey')key:string){return this.commercial.supportList(await this.auth.context(r,key,'platform'),r.query);}
  @Post('support-grants/:id/actions')async supportDecision(@Req()r:Request,@Param('tenantKey')key:string,@Param('id')id:string,@Body()body:unknown){return this.commercial.decide(await this.auth.context(r,key,'platform'),id,body);}
 }
 @Controller('api/v1/operator/operations')
@@ -47,9 +48,10 @@ export class OperationsController{
  @Put('plans')async plan(@Req()r:Request,@Body()b:unknown){return this.commercial.savePlan(await this.operator(r),b);}
  @Get('tenants/:id')async summary(@Req()r:Request,@Param('id')id:string){await this.operator(r);return this.quotas.summary(id);}
  @Put('tenants/:id/subscription')async subscription(@Req()r:Request,@Param('id')id:string,@Body()b:unknown){return this.commercial.subscribe(await this.operator(r),id,b);}
+ @Get('tenants/:id/bills')async bills(@Req()r:Request,@Param('id')id:string){await this.operator(r);return this.commercial.bills(id,r.query);}
  @Post('tenants/:id/bills')async bill(@Req()r:Request,@Param('id')id:string,@Body()b:unknown){return this.commercial.bill(await this.operator(r),id,b);}
  @Post('tenants/:id/bills/:billId/actions')async billState(@Req()r:Request,@Param('id')id:string,@Param('billId')billId:string,@Body()b:unknown){return this.commercial.billState(await this.operator(r),id,billId,b);}
- @Get('tenants/:id/support')async supportList(@Req()r:Request,@Param('id')id:string){return this.commercial.operatorSupport(await this.operator(r),id);}
+ @Get('tenants/:id/support')async supportList(@Req()r:Request,@Param('id')id:string){return this.commercial.operatorSupport(await this.operator(r),id,r.query);}
  @Post('tenants/:id/support')async requestSupport(@Req()r:Request,@Param('id')id:string,@Body()b:unknown){return this.commercial.requestSupport(await this.operator(r),id,b);}
  @Get('tenants/:id/support/:grantId/:scope')async inspect(@Req()r:Request,@Param('id')id:string,@Param('grantId')grantId:string,@Param('scope')scope:string){return this.commercial.inspect(await this.operator(r),id,grantId,scope);}
 }

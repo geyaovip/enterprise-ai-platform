@@ -1,3 +1,7 @@
+import {GeoWorker} from './modules/geo/geo.worker';
+import { channelProviders } from './modules/platform/channel-registration';
+import { ChannelService } from './modules/platform/channel.service';
+import { ContentService } from './modules/content/content.service';
 import {CrmMetricsService} from './modules/crm/metrics.service';
 import {CrmImportService} from './modules/crm/import.service';
 import { AiMemoryService } from './modules/ai/ai-memory.service';
@@ -17,17 +21,22 @@ import { TaskService } from './modules/orchestration/task.service';
 import { ApplicationCollaborationService } from './modules/orchestration/collaboration.service';
 import { OperatingEventService } from './modules/erp/operating-event.service';
 import { ManagedRuntimeService } from './modules/ai/managed-runtime.service';
+import { BomVisionService } from './modules/mes/bom-vision.service';
 import { cleanupOcrTemps } from './modules/knowledge/native-ocr';
 
 export async function processNextTask(db: PrismaService, auth: AuthService, ai: AiService): Promise<boolean> {
   const stale = new Date(Date.now() - 360_000);
   await db.aiExecution.updateMany({ where: { status: 'running', createdAt: { lt: stale } }, data: { status: 'interrupted', errorCode: 'EXECUTOR_INTERRUPTED', finishedAt: new Date() } });
-  const task = await db.aiTask.findFirst({ where: { OR: [{ status: 'queued' }, { status: 'running', startedAt: { lt: stale } }] }, orderBy: { createdAt: 'asc' } });
+  const unsettled=await db.aiChatTurn.findMany({where:{status:'reserved',taskId:{not:null},updatedAt:{lt:stale}},select:{taskId:true},take:20});
+  const ended=await db.aiTask.findMany({where:{id:{in:unsettled.map(t=>t.taskId!)},status:{in:['completed','failed','cancelled']},updatedAt:{lt:stale}}});
+  for(const job of ended)await ai.settleMessageTask(job);
+  const task = await db.aiTask.findFirst({ where: { kind:{in:['analyze','extract','message']},OR: [{ status: 'queued' }, { status: 'running', startedAt: { lt: stale } }] }, orderBy: { createdAt: 'asc' } });
   if (!task) return false;
   const claimed = await db.aiTask.updateMany({ where: { id: task.id, status: task.status, ...(task.status === 'running' ? { startedAt: task.startedAt } : {}) }, data: { status: 'running', startedAt: new Date(), attempts: { increment: 1 } } });
   if (!claimed.count) return true;
   if (task.attempts >= 3) {
     await db.aiTask.update({ where: { id: task.id }, data: { status: 'failed', errorCode: 'RETRY_LIMIT', finishedAt: new Date() } });
+    await ai.settleMessageTask(task);
     return true;
   }
   const heartbeat = setInterval(()=>{void db.aiTask.updateMany({where:{id:task.id,status:'running'},data:{startedAt:new Date()}}).catch(()=>{});},10000);
@@ -42,7 +51,7 @@ export async function processNextTask(db: PrismaService, auth: AuthService, ai: 
     });
   } catch (error) {
     await db.aiTask.updateMany({ where: { id: task.id,status:'running' }, data: { status: 'failed', errorCode: error instanceof Error ? error.name.slice(0, 80) : 'UNKNOWN', finishedAt: new Date() } });
-  } finally {clearInterval(heartbeat);}
+  } finally {clearInterval(heartbeat);await ai.settleMessageTask(task);}
   return true;
 }
 
@@ -96,11 +105,19 @@ async function main() {
   let stopping = false;
   const aiWorkerCount = Math.max(1, Math.min(4, Number(process.env.AI_TASK_WORKER_CONCURRENCY ?? 2) || 1));
   const lanes = [
+    {name:'geo_analysis',interval:1000,deadline:180000,run:()=>app.get(GeoWorker).tick()},
+    {name:'geo_monitoring',interval:30000,deadline:180000,run:()=>app.get(GeoWorker).schedules()},
+    {name:'content_generation',interval:1000,deadline:360000,run:()=>app.get(ContentService).tick()},
+    {name:'content_exports',interval:1000,deadline:180000,run:()=>app.get(ContentService).delivery.tick()},
+    {name:'content_retention',interval:3600000,deadline:120000,run:()=>app.get(ContentService).cleanup()},
+    {name:'bom_vision',interval:1000,deadline:900000,run:()=>app.get(BomVisionService).tick()},
+    {name:'bom_vision_retention',interval:3600000,deadline:120000,run:()=>app.get(BomVisionService).cleanup()},
     {name:'crm_imports',interval:1000,deadline:300000,run:()=>app.get(CrmImportService).tick()},
     {name:'crm_metrics',interval:2000,deadline:180000,run:()=>app.get(CrmMetricsService).tick()},
     {name:'crm_retention',interval:3600000,deadline:180000,run:()=>app.get(CrmImportService).cleanupExpired()},
+    {name:'channel_setup',interval:3000,deadline:90000,run:()=>app.get(ChannelService).pollSetups()},
     {name:'channel_sync',interval:10000,deadline:90000,run:()=>channels.sync()},
-    {name:'channel_inbound',interval:1000,deadline:90000,run:()=>channels.processInbound()},
+    ...channelProviders.map(provider=>({name:'channel_inbound_'+provider,interval:1000,deadline:360000,run:()=>channels.processInbound(provider)})),
     {name:'channel_delivery',interval:1000,deadline:90000,run:()=>channels.processDelivery()},
     ...Array.from({length:aiWorkerCount},(_,index)=>({name:`ai_tasks_${index+1}`,interval:1000,deadline:360000,run:()=>processNextTask(db,auth,ai)})),
     {name:'ai_memory_cleanup',interval:10000,deadline:180000,run:()=>app.get(AiMemoryService).flushPurge()},

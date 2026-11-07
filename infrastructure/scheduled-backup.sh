@@ -33,8 +33,10 @@ trap finish EXIT
 "${compose[@]}" exec -T postgres pg_restore --list < "$work/database.dump" > /dev/null
 "${compose[@]}" run --rm --no-deps -T --entrypoint tar api -C /var/lib/suite/knowledge -cf - . > "$work/knowledge.tar"
 tar -tf "$work/knowledge.tar" >/dev/null
-(cd "$work"; sha256sum database.dump knowledge.tar > SHA256SUMS)
-printf '{"createdAt":"%s","database":"database.dump","originals":"knowledge.tar","consistentWritersStopped":true}\n' "$(date -u +%FT%TZ)" > "$work/manifest.json"
+"${compose[@]}" run --rm --no-deps -T --entrypoint tar api -C /var/lib/suite/content -cf - . > "$work/content.tar"
+tar -tf "$work/content.tar" >/dev/null
+(cd "$work"; sha256sum database.dump knowledge.tar content.tar > SHA256SUMS)
+printf '{"createdAt":"%s","database":"database.dump","originals":"knowledge.tar","contentMedia":"content.tar","consistentWritersStopped":true}\n' "$(date -u +%FT%TZ)" > "$work/manifest.json"
 mv "$work" "output/backups/snapshot-$stamp"
 result=success
 # No automatic deletion. Retention is a separate recovery decision.

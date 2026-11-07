@@ -31,4 +31,5 @@ export interface AppAiProvider {
   actionPresentation?(ctx: RequestContext, tool: string, input: Record<string, unknown>, result: unknown): Promise<{ parameters: Record<string, unknown>; receipt: Record<string, unknown>; destination?: string }>;
   shortages?(ctx: RequestContext): Promise<unknown>;
   extract?(ctx: RequestContext, body: unknown): Promise<unknown>;
+  intake?(ctx: RequestContext, body: unknown): Promise<unknown>;
 }

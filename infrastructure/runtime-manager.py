@@ -29,9 +29,9 @@ MAX_ACTIVE = max(1, min(4, int(os.environ.get('RUNTIME_MAX_ACTIVE', '1'))))
 MEMBER_CONCURRENT = max(1, min(4, int(os.environ.get('RUNTIME_MEMBER_CONCURRENT', '2'))))
 GATEWAY_CPUS = max(0.5, min(64, float(os.environ.get('RUNTIME_GATEWAY_CPUS', '2'))))
 GATEWAY_MEMORY_MB = max(1024, min(65536, int(os.environ.get('RUNTIME_GATEWAY_MEMORY_MB', '1536'))))
-TURN_POLICY_VERSION = 4
+TURN_POLICY_VERSION = 8
 FAST_AGENT_VERSION = 4
-PROFILE_AGENT_VERSION = 1
+PROFILE_AGENT_VERSION = 2
 IDLE = max(0, int(os.environ.get('RUNTIME_IDLE_SECONDS', '900')))
 LEASE_TTL = 180  # heartbeat is 10 seconds; model call deadline is 60 seconds
 BOOT_LIMIT = 180
@@ -70,13 +70,18 @@ class Manager:
         self.cleanup_active = set()
         self.submit_cleanup = submit_cleanup or (lambda run: threading.Thread(target=run, daemon=True).start())
 
-    def apply_turn_policy(self, config):
+    def apply_turn_policy(self, config, platform_default=False):
         # The platform sends authorized history and owns durable messages/audits.
         # Workspace bootstrap and Home notices must not add a second context source.
         config['agents']['defaults']['contextInjection'] = 'never'
         config.setdefault('session', {})['notifyOnCreate'] = False
         entries = config['agents']['entries']
-        base = next((v for k,v in entries.items() if k not in ('crm-assistant','mes-assistant') and not k.endswith(('-fast','-read'))), {})
+        primary = config['agents']['defaults'].get('model', {})
+        primary = primary.get('primary', '') if isinstance(primary, dict) else primary
+        # apply_model owns the reserved suite provider for explicit enterprise
+        # settings. Platform trial defaults must never replace that selection.
+        custom_model = not platform_default and primary.startswith('suite/') and 'suite' in config.get('models', {}).get('providers', {})
+        base = next((v for k,v in entries.items() if k not in ('crm-assistant','mes-assistant','content-assistant','geo-assistant') and not k.endswith(('-fast','-read'))), {})
         crm = copy.deepcopy(base)
         if 'model' in entries.get('crm-assistant', {}):
             crm['model'] = copy.deepcopy(entries['crm-assistant']['model'])
@@ -87,7 +92,7 @@ class Manager:
         crm['tools'] = {'allow':['crm__*','suite__return_answer','session_status']}
         crm.setdefault('params', {})['extra_body'] = {'thinking': {'type':'disabled'}}
         crm_model = os.environ.get('CRM_MODEL_ID', '')
-        if crm_model:
+        if crm_model and not custom_model:
             if crm_model not in ['doubao-seed-2-1-lite-260915']:
                 raise ValueError('CRM_MODEL_NOT_APPROVED')
             primary = config['agents']['defaults'].get('model', {})
@@ -110,7 +115,7 @@ class Manager:
         mes['tools'] = {'allow':['mes__*','suite__return_answer','session_status']}
         mes.setdefault('params', {})['extra_body'] = {'thinking': {'type':'disabled'}}
         mes_model = os.environ.get('MES_MODEL_ID', '')
-        if mes_model:
+        if mes_model and not custom_model:
             if mes_model != 'doubao-seed-evolving':
                 raise ValueError('MES_MODEL_NOT_APPROVED')
             primary = config['agents']['defaults'].get('model', {})
@@ -122,7 +127,68 @@ class Manager:
                     provider.setdefault('models', []).append({'id':mes_model,'name':mes_model,'reasoning':False,'input':['text'],'contextWindow':64000,'maxTokens':2000})
                 mes['model'] = {'primary':provider_id+'/'+mes_model,'fallbacks':[]}
         entries['mes-assistant'] = mes
-        config['tools']['allow'] = list(dict.fromkeys(config['tools'].get('allow', []) + ['crm__*','mes__*']))
+        content = copy.deepcopy(base)
+        content.pop('default', None)
+        content['workspace'] = '/state/workspace'
+        content['agentDir'] = '/state/agents/content-assistant'
+        content['skills'] = []
+        content.setdefault('params', {})['extra_body'] = {'thinking': {'type': 'disabled'}}
+        content['tools'] = {'allow': ['content__*', 'suite__return_answer']}
+        entries['content-assistant'] = content
+        geo = copy.deepcopy(content)
+        geo['agentDir'] = '/state/agents/geo-assistant'
+        geo['tools'] = {'allow': ['geo__*', 'suite__return_answer']}
+        entries['geo-assistant'] = geo
+        config['tools']['allow'] = list(dict.fromkeys(config['tools'].get('allow', []) + ['crm__*','mes__*','content__*','geo__*']))
+        # User-selected platform trial model overrides every native chat agent,
+        # including pre-provisioned profiles and prior CRM/MES model overrides.
+        selected = 'deepseek-v4-1-flash-economy-261017' if platform_default else os.environ.get('NATIVE_CHAT_MODEL_ID', '')
+        if selected and not custom_model:
+            if selected != 'deepseek-v4-1-flash-economy-261017':
+                raise ValueError('NATIVE_CHAT_MODEL_NOT_APPROVED')
+            primary = config['agents']['defaults'].get('model', {})
+            primary = primary.get('primary', '') if isinstance(primary, dict) else primary
+            provider_id = primary.partition('/')[0]
+            provider = config.get('models', {}).get('providers', {}).get(provider_id)
+            if not provider:
+                # New member templates receive their provider in apply_model().
+                return
+            if urlparse(provider.get('baseUrl', '')).hostname != 'ark.cn-beijing.volces.com':
+                raise ValueError('NATIVE_CHAT_MODEL_PROVIDER_MISMATCH')
+            if not any(item.get('id') == selected for item in provider.get('models', [])):
+                provider.setdefault('models', []).append({'id':selected,'name':selected,'reasoning':False,'input':['text'],'contextWindow':64000,'maxTokens':4000})
+            chosen = {'primary':provider_id + '/' + selected,'fallbacks':[]}
+            config['agents']['defaults']['model'] = copy.deepcopy(chosen)
+            for agent in entries.values():
+                agent['model'] = copy.deepcopy(chosen)
+                agent.setdefault('params', {})['extra_body'] = {'thinking':{'type':'disabled'}}
+        if custom_model:
+            chosen = {'primary': primary, 'fallbacks': []}
+            config['agents']['defaults']['model'] = copy.deepcopy(chosen)
+            for agent in entries.values():
+                agent['model'] = copy.deepcopy(chosen)
+                extra = agent.get('params', {}).get('extra_body', {})
+                extra.pop('thinking', None)
+                if not extra:
+                    agent.get('params', {}).pop('extra_body', None)
+        # An operator may declare only models independently accepted for images.
+        # Do not infer vision support from a model name or enable fallback calls.
+        approved = set(filter(None, os.environ.get('OPENCLAW_IMAGE_MODEL_IDS', '').split(',')))
+        for provider in config.get('models', {}).get('providers', {}).values():
+            for model in provider.get('models', []):
+                if model.get('id') in approved:
+                    model['input'] = ['text', 'image']
+
+    def image_apps(self, config):
+        result = []
+        for app in ['erp', 'mes']:
+            model = config.get('agents', {}).get('entries', {}).get(app + '-assistant', {}).get('model', config.get('agents', {}).get('defaults', {}).get('model', {}))
+            primary = model.get('primary', '') if isinstance(model, dict) else model
+            provider_id, _, model_id = primary.partition('/')
+            provider = config.get('models', {}).get('providers', {}).get(provider_id, {})
+            if model_id in set(filter(None, os.environ.get('OPENCLAW_IMAGE_MODEL_IDS', '').split(','))) and any(m.get('id') == model_id and 'image' in m.get('input', []) for m in provider.get('models', [])):
+                result.append(app)
+        return result
 
 
     def install_crm_skills(self, state_dir, config=None):
@@ -195,6 +261,8 @@ class Manager:
 
     def apply_model(self, config, model):
         url = urlparse(model['baseUrl'])
+        if model.get('platformDefault') is True and (model.get('model') != 'deepseek-v4-1-flash-economy-261017' or url.hostname != 'ark.cn-beijing.volces.com'):
+            raise ValueError('PLATFORM_DEFAULT_MODEL_REJECTED')
         allowed = os.environ.get('AI_PROVIDER_ALLOWED_HOSTS', '').split(',')
         if url.scheme != 'https' or url.hostname not in allowed or url.username or url.password or url.query or url.fragment:
             raise ValueError('MODEL_HOST_REJECTED')
@@ -229,7 +297,7 @@ class Manager:
         config['agents']['defaults']['systemAgent'] = {'agentId': base_id}
         for agent in entries.values():
             agent.pop('model', None)
-        self.apply_turn_policy(config)
+        self.apply_turn_policy(config, model.get('platformDefault') is True)
         return hashlib.sha256(json.dumps(model, sort_keys=True).encode()).hexdigest()
 
     def command(self, op, body):
@@ -244,7 +312,7 @@ class Manager:
             if record and record['tenantId'] != tenant:
                 raise ValueError('MEMBER_TENANT_MISMATCH')
             if op == 'status':
-                return {**self.public(member), 'available': bool(record or self.profile(tenant))}
+                return {**self.public(member), 'available': bool(record or self.profile(tenant)), 'profileConfigured': bool(self.profile(tenant))}
             if op == 'prepare':
                 model = body.get('model')
                 model_hash = hashlib.sha256(json.dumps(model, sort_keys=True).encode()).hexdigest() if model else None
@@ -292,7 +360,8 @@ class Manager:
                     raise ValueError('MODEL_NOT_CONFIGURED')
                 # A provisioned profile is always scoped to its owning tenant.
                 config = copy.deepcopy(profile or json.loads((ROOT / 'template.json').read_text()))
-                self.apply_turn_policy(config)
+                if not model:
+                    self.apply_turn_policy(config)
                 config['tools']['allow'] = list(dict.fromkeys(config['tools'].get('allow', []) + ['suite__return_answer']))
                 for agent_id, agent in config['agents'].get('entries', {}).items():
                     policy = agent.setdefault('tools', {})
@@ -319,7 +388,7 @@ class Manager:
                 record = {'tenantId': tenant, 'container': 'suite-managed-' + member,
                           'directory': str(state_dir), 'token': token, 'agentId': next(iter(config['agents']['entries'])),
                           'state': 'suspended', 'lastUsedAt': self.clock(), 'exists': False, 'modelHash': model_hash,
-                          'warm': False, 'concurrency': MEMBER_CONCURRENT,
+                          'warm': False, 'concurrency': MEMBER_CONCURRENT, 'platformDefault': bool(model and model.get('platformDefault') is True),
                           'fastAgentId': next(iter(config['agents']['entries'])) + '-fast' if model else profile_fast_id,
                           'readAgentId': next(iter(config['agents']['entries'])) + '-read' if model else profile_read_id,
                           'fastAgentVersion': FAST_AGENT_VERSION if model else None,
@@ -352,7 +421,7 @@ class Manager:
             if record.get('turnPolicyVersion') != TURN_POLICY_VERSION and not any(l['member'] == member for l in self.data['leases'].values()):
                 config_path = Path(record['directory']) / 'openclaw.json'
                 config = json.loads(config_path.read_text())
-                self.apply_turn_policy(config)
+                self.apply_turn_policy(config, record.get('platformDefault', False))
                 self.install_crm_skills(Path(record['directory']), config)
                 if record['state'] in ['ready', 'preparing']:
                     self.stop(record)
@@ -408,6 +477,7 @@ class Manager:
                     atomic(config_path, config)
                     os.chown(config_path, 1000, 1000)
                     record['modelHash'] = new_model_hash
+                    record['platformDefault'] = model.get('platformDefault') is True
                     record['readAgentId'] = read_id
                     self.persist()
             if len(record.get('pendingCleanup', [])) >= 100 and not old:
@@ -430,7 +500,7 @@ class Manager:
                     and admitted_here < record.get('concurrency', 1) and (not older_other or MAX_ACTIVE > 1)))):
                 lease['admitted'] = True
                 self.persist()
-                return {'state': 'ready', 'baseUrl': 'http://gateway-' + member + ':18789', 'secret': record['token'], 'agentId': record['agentId'], 'fastAgentId': record.get('fastAgentId'), 'readAgentId': record.get('readAgentId'), 'ephemeralTurns': record.get('turnPolicyVersion') == TURN_POLICY_VERSION}
+                return {'state': 'ready', 'baseUrl': 'http://gateway-' + member + ':18789', 'secret': record['token'], 'agentId': record['agentId'], 'fastAgentId': record.get('fastAgentId'), 'readAgentId': record.get('readAgentId'), 'ephemeralTurns': record.get('turnPolicyVersion') == TURN_POLICY_VERSION, 'imageInputApps': self.image_apps(json.loads((Path(record['directory']) / 'openclaw.json').read_text()))}
             if record['state'] == 'failed':
                 # Don't auto-retry a failed boot forever. A new request can retry it.
                 if lease['queuedAt'] > record.get('failedAt', 0):
