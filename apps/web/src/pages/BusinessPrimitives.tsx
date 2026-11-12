@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { ChoiceSelect } from '../components';
 import { useViewState } from '../business-context';
 import { useEffect, useId, useRef, useState } from 'react';
@@ -21,7 +22,7 @@ export function BusinessFilters({storageKey,onApply,statuses,parties,owners,keyw
  const restore=()=>{try{const parsed=JSON.parse(localStorage.getItem(storageKey)??'null');if(!parsed||Object.keys(emptyFilters).some(k=>typeof parsed[k]!=='string')||['from','to'].some(k=>parsed[k]&&(!/^\d{4}-\d{2}-\d{2}$/.test(parsed[k])||!Number.isFinite(Date.parse(parsed[k]))))||(parsed.from&&parsed.to&&parsed.from>parsed.to)){setNotice('还没有保存筛选');return;}setValue(parsed);onApply(parsed);setNotice('已使用保存的筛选');}catch{setNotice('保存的筛选无法读取');}};
  return <section className="panel filter-panel"><form className="business-filter-grid" data-expanded={expanded} onSubmit={submit}>
    <Field label="关键词"><input value={value.q} placeholder={keywordHint??"单号或往来单位"} onChange={e=>setValue({...value,q:e.target.value})}/></Field>
-   {statuses.length>0&&<Field label="状态"><select value={value.status} onChange={e=>setValue({...value,status:e.target.value})}><option value="">全部状态</option>{statuses.map(([key,name])=><option key={key} value={key}>{name}</option>)}</select></Field>}
+   {statuses.length>0&&<Field label="状态"><DropdownSelect value={value.status} onChange={e=>setValue({...value,status:e.target.value})}><option value="">全部状态</option>{statuses.map(([key,name])=><option key={key} value={key}>{name}</option>)}</DropdownSelect></Field>}
    <div className="business-filter-extra" id={id}>
      <Field label="开始日期"><input type="date" value={value.from} onChange={e=>setValue({...value,from:e.target.value})}/></Field>
      <Field label="结束日期"><input type="date" value={value.to} onChange={e=>setValue({...value,to:e.target.value})}/></Field>

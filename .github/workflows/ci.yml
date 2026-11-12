@@ -29,3 +29,19 @@ jobs:
       - run: pnpm --filter @suite/api build
       - run: pnpm build:cloud
       - run: pnpm test:seo
+      - name: Package verified frontend builds
+        if: github.ref == 'refs/heads/main'
+        run: |
+          printf '%s\n' "$GITHUB_SHA" > release-sha.txt
+          tar -czf frontends.tar.gz release-sha.txt \
+            apps/web/dist apps/admin/dist apps/platform-admin/dist \
+            var/cloud-frontend-assets cloudflare/frontend-worker.js cloudflare/public-routes.mjs \
+            wrangler.workspace.jsonc wrangler.tenant-admin.jsonc wrangler.platform-admin.jsonc
+      - name: Store release artifact
+        if: github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: frontends-${{ github.sha }}
+          path: frontends.tar.gz
+          if-no-files-found: error
+          retention-days: 30

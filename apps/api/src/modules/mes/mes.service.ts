@@ -1,4 +1,5 @@
 import { readCollectionPage, collectionResult } from '../platform/collection-page';
+import { manufacturingPermissions } from '../manufacturing/manufacturing.permissions';
 import { compatibleHistory } from './bom-history';
 import { Injectable } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
@@ -70,7 +71,7 @@ export class MesService {
   }
   }
   async guard(c: RequestContext, p: string, tx: Db = this.db) {
-    if (c.app.appId !== "mes") fail("FORBIDDEN", "应用上下文不匹配", 403);
+    if (!["mes", "manufacturing"].includes(c.app.appId)) fail("FORBIDDEN", "应用上下文不匹配", 403);
     const member = await tx.membership.findFirst({
       where: {
         id: c.membershipId,
@@ -82,10 +83,17 @@ export class MesService {
       },
     });
     const app = await tx.tenantApp.findUnique({
-      where: { tenantId_appId: { tenantId: c.tenantId, appId: "mes" } },
+      where: { tenantId_appId: { tenantId: c.tenantId, appId: c.app.appId } },
     });
     if (!member || !app?.granted || !app.enabled)
       fail("FORBIDDEN", "成员或MES已停用", 403);
+    if (c.app.appId === "manufacturing") {
+      const allowed = await manufacturingPermissions(tx, c.tenantId, member.role, member.id);
+      const required = p.endsWith(".read") ? "manufacturing.read" : "manufacturing.setup";
+      if (!/^mes\.(material|bom)\.(read|write|publish)$/.test(p) || !allowed.includes(required))
+        fail("FORBIDDEN", "没有此制造资料权限", 403);
+      return { permissions: allowed, role: member.role, ownOnly: false, stamp: fingerprint(member) };
+    }
     const permissions = await mesPermissions(
       tx,
       c.tenantId,
@@ -131,15 +139,16 @@ export class MesService {
     const run = async (tx: Db) => {
       await this.lock(tx, c);
       await tx.$queryRaw`SELECT id FROM "Membership" WHERE id=${c.membershipId} AND "tenantId"=${c.tenantId} FOR SHARE`;
-      await tx.$queryRaw`SELECT id FROM "TenantApp" WHERE "tenantId"=${c.tenantId} AND "appId"='mes' FOR SHARE`;
+      await tx.$queryRaw`SELECT id FROM "TenantApp" WHERE "tenantId"=${c.tenantId} AND "appId"=${c.app.appId} FOR SHARE`;
       await this.guard(c, p, tx);
       const key = parse(requestKey, input.requestKey),
+        scopedCommand = c.app.appId === "manufacturing" ? "manufacturing." + command : command,
         hash = fingerprint(input),
         where = {
           tenantId_membershipId_command_requestKey: {
             tenantId: c.tenantId,
             membershipId: c.membershipId,
-            command,
+            command: scopedCommand,
             requestKey: key,
           },
         };
@@ -154,7 +163,7 @@ export class MesService {
         data: {
           tenantId: c.tenantId,
           membershipId: c.membershipId,
-          command,
+          command: scopedCommand,
           requestKey: key,
           fingerprint: hash,
           result: json(result),
@@ -179,7 +188,7 @@ export class MesService {
         tenantId: c.tenantId,
         userId: c.userId,
         membershipId: c.membershipId,
-        appId: "mes",
+        appId: c.app.appId,
         requestId: c.requestId,
         action: "mes." + action,
         resourceType: type,
@@ -437,7 +446,7 @@ export class MesService {
       };
     return r;
   }
-  async saveMaterial(c: RequestContext, id: string | undefined, raw: unknown) {
+  async saveMaterial(c: RequestContext, id: string | undefined, raw: unknown, external?: Db) {
     const i = parse(
       keyInput
         .extend({
@@ -521,6 +530,7 @@ export class MesService {
         await this.audit(tx, c, "material.save", "material", r.id);
         return r;
       },
+      external,
     );
   }
   async saveBom(
@@ -687,7 +697,14 @@ export class MesService {
       bomVersions: [...versions.values()],
     };
   }
-  async publishBom(c: RequestContext, id: string, raw: unknown) {
+  async manufacturingSnapshot(c: RequestContext, productId: string, count: number, tx: Prisma.TransactionClient) {
+    if (c.app.appId !== "manufacturing") fail("FORBIDDEN", "应用上下文不匹配", 403);
+    await this.guard(c, "mes.bom.read", tx);
+    const bom = await tx.mesBom.findFirst({ where: { tenantId: c.tenantId, productId, status: "published" } });
+    if (!bom) return fail("BOM_INVALID", "该成品还没有已发布的BOM，请先到物料与BOM设置");
+    return { bom, ...await this.explode(c, bom, count, tx) };
+  }
+  async publishBom(c: RequestContext, id: string, raw: unknown, external?: Db) {
     const i = parse(mutation.strict(), raw);
     return this.write(
       c,
@@ -730,6 +747,7 @@ export class MesService {
         });
         return r;
       },
+      external,
     );
   }
   async saveReview(c: RequestContext, id: string, raw: unknown, external?: Db) {

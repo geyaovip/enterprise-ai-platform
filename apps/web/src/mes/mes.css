@@ -2,7 +2,7 @@
   min-width: 0;
 }
 .mes-app input,
-.mes-app select,
+.mes-app .dropdown-select-trigger,
 .mes-app textarea {
   min-width: 0;
 }

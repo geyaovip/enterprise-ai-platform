@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
 import type { RequestContext } from '../platform/context';
 import { readBody } from '../platform/security';
-import { audit, conflict, decimal, failNotFound, label, money, ownerFilter, pageQuery } from './erp.common';
+import { type Transaction, audit, conflict, decimal, failNotFound, label, money, ownerFilter, pageQuery } from './erp.common';
 import { pricedLine, tradeLineInput } from './trade.common';
 
 const customerInput = z.object({ code: label(60), name: label(), contactName: z.string().trim().max(100).optional(), phone: z.string().trim().max(50).optional(), industry: z.string().trim().max(100).optional(), address: z.string().trim().max(500).optional(), taxNumber: z.string().trim().max(80).optional(), paymentDays: z.int().min(0).max(3650).default(0), creditLimit: money.nullable().optional(), inPool: z.boolean().optional() });
@@ -206,17 +206,18 @@ export class MasterService {
     return { supplier, lines: previewLines, estimatedTotal: previewLines.reduce((sum, line) => sum.plus(line.amount), new Prisma.Decimal(0)).toFixed(2) };
   }
 
-  async createCustomer(ctx: RequestContext, body: unknown) {
+  async createCustomer(ctx: RequestContext, body: unknown, external?: Transaction) {
     this.role(ctx, ['admin', 'sales']);
     const input = readBody(customerInput, body);
     if (input.creditLimit!==undefined&&!ctx.roles.includes('admin')) throw new ForbiddenException('信用额度由管理员维护');
     if (input.inPool && !ctx.roles.includes('admin')) throw new ForbiddenException('只有管理员可以添加公海客户');
-    return this.db.$transaction(async tx => {
+    const run = async (tx: Transaction) => {
       const { inPool, ...customer } = input;
       const item = await tx.erpCustomer.create({ data: { tenantId: ctx.tenantId, ...customer, ownerMembershipId: inPool ? null : ctx.membershipId } });
       await audit(tx, ctx, 'erp.customer.create', 'Customer', item.id, { inPool: Boolean(inPool) });
       return item;
-    });
+    };
+    return external ? run(external) : this.db.$transaction(run);
   }
 
   async updateCustomer(ctx: RequestContext, id: string, body: unknown) {
@@ -307,14 +308,15 @@ export class MasterService {
     return { items, total, page: q.page, page_size: q.page_size };
   }
 
-  async createProduct(ctx: RequestContext, body: unknown) {
+  async createProduct(ctx: RequestContext, body: unknown, external?: Transaction) {
     this.role(ctx, ['admin', 'purchasing']);
     const input = readBody(productInput, body);
-    return this.db.$transaction(async tx => {
+    const run = async (tx: Transaction) => {
       const item = await tx.erpProduct.create({ data: { tenantId: ctx.tenantId, sku: input.sku, name: input.name, category: input.category, unit: input.unit, salePrice: decimal(input.salePrice), purchasePrice: decimal(input.purchasePrice), reorderPoint: input.reorderPoint, balance: { create: { tenantId: ctx.tenantId } } }, include: { balance: true } });
       await audit(tx, ctx, 'erp.product.create', 'Product', item.id);
       return item;
-    });
+    };
+    return external ? run(external) : this.db.$transaction(run);
   }
 
   async updateProduct(ctx: RequestContext, id: string, body: unknown) {
@@ -341,14 +343,15 @@ export class MasterService {
     return { items, total, page: q.page, page_size: q.page_size };
   }
 
-  async createSupplier(ctx: RequestContext, body: unknown) {
+  async createSupplier(ctx: RequestContext, body: unknown, external?: Transaction) {
     this.role(ctx, ['admin', 'purchasing']);
     const input = readBody(supplierInput, body);
-    return this.db.$transaction(async tx => {
+    const run = async (tx: Transaction) => {
       const item = await tx.erpSupplier.create({ data: { tenantId: ctx.tenantId, ...input } });
       await audit(tx, ctx, 'erp.supplier.create', 'Supplier', item.id);
       return item;
-    });
+    };
+    return external ? run(external) : this.db.$transaction(run);
   }
 
   async updateSupplier(ctx: RequestContext, id: string, body: unknown) {

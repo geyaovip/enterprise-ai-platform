@@ -18,7 +18,7 @@ for(const [route,html]of pages){
 }
 const home=pages.get('/');
 assert.deepEqual(publicPaths,['/','/employees','/solutions','/products','/knowledge','/contact']);
-for(const [path,count]of [['/employees',5],['/products',5],['/solutions',11]]){
+for(const [path,count]of [['/employees',5],['/products',6],['/solutions',12]]){
  const html=pages.get(path);assert.equal((html.match(/role="tab"/g)||[]).length,count);assert.equal((html.match(/role="tabpanel"/g)||[]).length,count);
  for(const [,id]of html.matchAll(/aria-controls="([^"]+)"/g))assert.ok(html.includes('id="'+id+'"'),'Missing controlled element '+id);
  assert.match(html,/准备哪些资料|业务功能/);assert.match(html,/协作示例/);
@@ -55,7 +55,7 @@ for(const [old,target]of Object.entries(retiredPublicRoutes)){
 for(const [path,html]of pages)for(const [,href]of html.matchAll(/<a[^>]+href="([^"]+)"/g)){if(href.startsWith('mailto:'))continue;const target=new URL(href,'https://qa.example'+path);assert.ok(!Object.hasOwn(retiredPublicRoutes,target.pathname),'Internal link still requires a retired detail page: '+href);}
 assert.match(home, /href="#work"/);
 const homeFeatures = [...home.matchAll(/<article class="application-feature [^"]+">([\s\S]+?)<\/article>/g)];
-assert.equal(homeFeatures.length,5);
+assert.equal(homeFeatures.length,6);
 for(const [,feature]of homeFeatures){
  const links = [...feature.matchAll(/<a [^>]*href="([^"]+)"/g)].map(([,href])=>href);
  assert.equal(links.length,1,'One scenario link per homepage card');
@@ -64,6 +64,11 @@ for(const [,feature]of homeFeatures){
 console.log('File-backed static binding verified: '+routes.size+' public routes, private shell, missing page 404 and legacy destinations.');
 
 assert.match(home, /href="\/products#geo"/);
+assert.match(home, /href="\/solutions#manufacturing-fulfillment"/);
+assert.match(pages.get('/products'), /products-tab-manufacturing/);
+assert.match(pages.get('/products'), /platform-manufacturing-render\.webp/);
+assert.match(pages.get('/products'), /WorkBuddy 制造进销存专家/);
+assert.match(pages.get('/solutions'), /solutions-tab-manufacturing-fulfillment/);
 assert.match(pages.get('/products'), /products-tab-geo/);
 assert.match(pages.get('/products'), /platform-geo-render\.webp/);
 assert.match(pages.get('/products'), /href="\/solutions#brand-visibility"/);

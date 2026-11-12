@@ -1,6 +1,9 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { Dialog, Field, InfoTip } from "../components";
 import { useState } from "react";
+import { SlidersHorizontalIcon } from "@phosphor-icons/react";
 import { useContent } from "./content-ui";
+import { StudioDropdown } from "./StudioDropdown";
 
 export type MediaMode = "image" | "video";
 export type PictureOptions = {
@@ -64,6 +67,7 @@ type Props = {
   clip: ClipOptions;
   hasFrame: boolean;
   preserveSize?: boolean;
+  dropdown?: boolean;
   disabled: boolean;
   onPicture: (value: PictureOptions) => void;
   onClip: (value: ClipOptions) => void;
@@ -75,6 +79,7 @@ export function MediaOptions({
   clip,
   hasFrame,
   preserveSize = false,
+  dropdown = false,
   disabled,
   onPicture,
   onClip,
@@ -94,6 +99,126 @@ export function MediaOptions({
     : ["480p", "720p", "1080p"];
   const ratioName = (value: string) =>
     value === "adaptive" ? "跟随首帧" : value;
+  const setResolution = (resolution: string) =>
+    image
+      ? onPicture({ ...picture, resolution: resolution as PictureOptions["resolution"] })
+      : onClip({ ...clip, resolution: resolution as ClipOptions["resolution"] });
+  const reset = () =>
+    image
+      ? onPicture(pictureDefaults)
+      : onClip({
+          ...clipDefaults,
+          ratio: hasFrame ? "adaptive" : clipDefaults.ratio,
+        });
+  const candidates = Array.from(
+    { length: image ? options.maxCandidates : 0 },
+    (_, index) => index + 1,
+  );
+  const ratioChoices = ratios.map((ratio) => (
+    <button
+      type="button"
+      key={ratio}
+      aria-pressed={ratio === selected.ratio}
+      onClick={() =>
+        image
+          ? onPicture({ ...picture, ratio })
+          : onClip({ ...clip, ratio })
+      }
+    >
+      <span aria-hidden="true" style={ratioStyle(ratio)} />
+      {ratioName(ratio)}
+    </button>
+  ));
+
+  if (dropdown) {
+    const summary = image
+      ? [preserveSize ? "原图尺寸" : picture.resolution + " · " + picture.ratio, picture.candidates + " 张"]
+      : [clip.resolution, clip.duration + "s", ratioName(clip.ratio)];
+    return (
+      <StudioDropdown
+        label="生成偏好"
+        summary={summary.join(" · ")}
+        icon={<SlidersHorizontalIcon size={16} aria-hidden="true" />}
+        disabled={disabled}
+        wide
+      >
+        {(close) => (
+          <div className="studio-generation-options">
+            {preserveSize ? (
+              <span>沿用原图尺寸</span>
+            ) : (
+              <fieldset>
+                <legend>清晰度</legend>
+                <div className="studio-option-segments">
+                  {resolutions.map((resolution) => (
+                    <button
+                      type="button"
+                      key={resolution}
+                      aria-pressed={resolution === selected.resolution}
+                      onClick={() => setResolution(resolution)}
+                    >
+                      {resolution}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            {!image && (
+              <fieldset>
+                <legend>时长</legend>
+                <div className="studio-duration">
+                  <input
+                    type="range"
+                    aria-label="视频时长"
+                    aria-valuetext={clip.duration + " 秒"}
+                    min={2}
+                    max={12}
+                    step={1}
+                    value={clip.duration}
+                    onChange={(event) =>
+                      onClip({ ...clip, duration: event.target.valueAsNumber })
+                    }
+                  />
+                  <output>{clip.duration} 秒</output>
+                </div>
+                <div className="studio-duration-limits" aria-hidden="true">
+                  <span>2s</span><span>12s</span>
+                </div>
+              </fieldset>
+            )}
+            {!preserveSize && (
+              <fieldset className="media-ratios">
+                <legend>比例</legend>
+                <div className="studio-option-segments studio-ratio-segments">{ratioChoices}</div>
+              </fieldset>
+            )}
+            {image && (
+              <fieldset>
+                <legend>候选张数</legend>
+                <div className="studio-option-segments">
+                  {candidates.map((n) => (
+                    <button
+                      type="button"
+                      key={n}
+                      aria-pressed={n === picture.candidates}
+                      onClick={() => onPicture({ ...picture, candidates: n })}
+                    >
+                      {n} 张
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+            <div className="studio-options-footer">
+              <button type="button" onClick={reset}>恢复默认</button>
+              <button type="button" onClick={close}>完成</button>
+            </div>
+          </div>
+        )}
+      </StudioDropdown>
+    );
+  }
+
   return (
     <>
       <button
@@ -124,49 +249,23 @@ export function MediaOptions({
             <>
               <fieldset className="media-ratios">
                 <legend>比例</legend>
-                {ratios.map((ratio) => (
-                  <button
-                    type="button"
-                    key={ratio}
-                    aria-pressed={ratio === selected.ratio}
-                    onClick={() =>
-                      image
-                        ? onPicture({ ...picture, ratio })
-                        : onClip({ ...clip, ratio })
-                    }
-                  >
-                    <span aria-hidden="true" style={ratioStyle(ratio)} />
-                    {ratioName(ratio)}
-                  </button>
-                ))}
+                {ratioChoices}
               </fieldset>
               <Field label="清晰度">
-                <select
+                <DropdownSelect
                   value={selected.resolution}
-                  onChange={(event) =>
-                    image
-                      ? onPicture({
-                          ...picture,
-                          resolution: event.target
-                            .value as PictureOptions["resolution"],
-                        })
-                      : onClip({
-                          ...clip,
-                          resolution: event.target
-                            .value as ClipOptions["resolution"],
-                        })
-                  }
+                  onChange={(event) => setResolution(event.target.value)}
                 >
                   {resolutions.map((resolution) => (
                     <option key={resolution}>{resolution}</option>
                   ))}
-                </select>
+                </DropdownSelect>
               </Field>
             </>
           )}
           {image ? (
             <Field label="候选张数">
-              <select
+              <DropdownSelect
                 value={picture.candidates}
                 onChange={(event) =>
                   onPicture({
@@ -175,19 +274,16 @@ export function MediaOptions({
                   })
                 }
               >
-                {Array.from(
-                  { length: options.maxCandidates },
-                  (_, index) => index + 1,
-                ).map((n) => (
+                {candidates.map((n) => (
                   <option key={n} value={n}>
                     {n} 张
                   </option>
                 ))}
-              </select>
+              </DropdownSelect>
             </Field>
           ) : (
             <Field label="时长">
-              <select
+              <DropdownSelect
                 value={clip.duration}
                 onChange={(event) =>
                   onClip({ ...clip, duration: Number(event.target.value) })
@@ -200,20 +296,10 @@ export function MediaOptions({
                     </option>
                   ),
                 )}
-              </select>
+              </DropdownSelect>
             </Field>
           )}
-          <button
-            type="button"
-            onClick={() =>
-              image
-                ? onPicture(pictureDefaults)
-                : onClip({
-                    ...clipDefaults,
-                    ratio: hasFrame ? "adaptive" : clipDefaults.ratio,
-                  })
-            }
-          >
+          <button type="button" onClick={reset}>
             恢复默认
           </button>
         </div>

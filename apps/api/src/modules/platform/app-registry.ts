@@ -1,3 +1,4 @@
+import {MANUFACTURING_MANIFEST} from '../manufacturing/manufacturing.permissions';
 import {GEO_MANIFEST} from '../geo/geo.rules';
 import {CONTENT_MANIFEST} from '../content/content-permissions';
 import {MES_MANIFEST} from '../mes/mes-permissions';
@@ -20,7 +21,7 @@ export const APP_MANIFESTS: readonly AppManifest[] = [
     aiCapabilities: ['conversation', 'controlled_actions', 'order_analysis', 'text_extract', 'shortage_suggestion'],
     defaultAgentId: 'erp.assistant',
   },
- CRM_MANIFEST,MES_MANIFEST,CONTENT_MANIFEST,GEO_MANIFEST,
+ CRM_MANIFEST,MES_MANIFEST,CONTENT_MANIFEST,GEO_MANIFEST,MANUFACTURING_MANIFEST,
 ];
 
 export function appManifest(appId: string) { return APP_MANIFESTS.find(x => x.appId === appId); }

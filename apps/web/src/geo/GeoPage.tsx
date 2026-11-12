@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import {
@@ -971,7 +972,7 @@ function QuestionTemplates({
       >
         <Notice text={message} />
         <Field label="问题分组">
-          <select
+          <DropdownSelect
             value={category}
             onChange={(event) => {
               const next = event.target.value;
@@ -982,7 +983,7 @@ function QuestionTemplates({
             {Object.keys(examples).map((label) => (
               <option key={label}>{label}</option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <Field label="监测问题（每行一条，最多 32 条）">
           <textarea
@@ -1622,7 +1623,7 @@ function Report({
               <div className="geo-section-head geo-evidence-head">
                 <h3>回答证据</h3>
                 <Field label="回答状态">
-                  <select
+                  <DropdownSelect
                     value={filter}
                     onChange={(e) => setFilter(e.target.value)}
                   >
@@ -1640,7 +1641,7 @@ function Report({
                         {state(s)}
                       </option>
                     ))}
-                  </select>
+                  </DropdownSelect>
                 </Field>
               </div>
               <ul className="geo-records">
@@ -1797,26 +1798,26 @@ function Insights({
       />
       <div className="geo-filters">
         <Field label="时间范围">
-          <select value={days} onChange={(e) => setDays(e.target.value)}>
+          <DropdownSelect value={days} onChange={(e) => setDays(e.target.value)}>
             {[7, 30, 90].map((d) => (
               <option key={d} value={d}>
                 近{d}天
               </option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <Field label="模型">
-          <select value={model} onChange={(e) => setModel(e.target.value)}>
+          <DropdownSelect value={model} onChange={(e) => setModel(e.target.value)}>
             <option value="">全部模型</option>
             {models.map((m) => (
               <option key={m.id} value={m.id}>
                 {m.name}
               </option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <Field label="问题">
-          <select
+          <DropdownSelect
             value={question}
             onChange={(e) => setQuestion(e.target.value)}
           >
@@ -1826,10 +1827,10 @@ function Insights({
                 {q.text}
               </option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <Field label="问题分组">
-          <select
+          <DropdownSelect
             value={category}
             onChange={(e) => setCategory(e.target.value)}
           >
@@ -1839,7 +1840,7 @@ function Insights({
                 {c}
               </option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
       </div>
       <DataResult {...query}>
@@ -2167,17 +2168,17 @@ function ScheduleForm({
         </Field>
         <div className="form-grid">
           <Field label="频率">
-            <select
+            <DropdownSelect
               value={v.frequency}
               onChange={(e) => setV({ ...v, frequency: e.target.value })}
             >
               <option value="daily">每日</option>
               <option value="weekly">每周</option>
-            </select>
+            </DropdownSelect>
           </Field>
           {v.frequency === "weekly" && (
             <Field label="星期">
-              <select
+              <DropdownSelect
                 value={v.weekday}
                 onChange={(e) =>
                   setV({ ...v, weekday: Number(e.target.value) })
@@ -2188,7 +2189,7 @@ function ScheduleForm({
                     星期{d}
                   </option>
                 ))}
-              </select>
+              </DropdownSelect>
             </Field>
           )}
           <Field label={`执行时间（${timezone}）`}>
@@ -2511,7 +2512,7 @@ function OptimizationForm({
           />
         </Field>
         <Field label="基线报告">
-          <select
+          <DropdownSelect
             required
             disabled={Boolean(value.id || value.sourceRunId)}
             value={v.baselineId}
@@ -2534,11 +2535,11 @@ function OptimizationForm({
                   {state(x.status)}
                 </option>
               ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <div className="form-grid">
           <Field label="负责人">
-            <select
+            <DropdownSelect
               value={v.assigneeMembershipId}
               onChange={(e) =>
                 setV({ ...v, assigneeMembershipId: e.target.value })
@@ -2550,7 +2551,7 @@ function OptimizationForm({
                   {m.name}
                 </option>
               ))}
-            </select>
+            </DropdownSelect>
           </Field>
           <Field label="截止日期">
             <input
@@ -2569,7 +2570,7 @@ function OptimizationForm({
           />
         </Field>
         <Field label="任务状态">
-          <select
+          <DropdownSelect
             value={v.status}
             onChange={(e) => setV({ ...v, status: e.target.value })}
           >
@@ -2578,7 +2579,7 @@ function OptimizationForm({
                 {state(s)}
               </option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <DialogAction>
           <button className="primary" disabled={busy}>
@@ -2746,7 +2747,7 @@ function Settings({ tenantKey }: { tenantKey: string }) {
                       {m.role === "admin" ? (
                         <span>企业管理员</span>
                       ) : (
-                        <select
+                        <DropdownSelect
                           aria-label={`${m.name}的GEO角色`}
                           value={m.role}
                           disabled={a.busy}
@@ -2764,7 +2765,7 @@ function Settings({ tenantKey }: { tenantKey: string }) {
                               {t}
                             </option>
                           ))}
-                        </select>
+                        </DropdownSelect>
                       )}
                     </div>
                   ))}
@@ -2884,7 +2885,7 @@ function ModelForm({
           />
         </Field>
         <Field label="模型系列">
-          <select
+          <DropdownSelect
             value={v.family}
             onChange={(e) => setV({ ...v, family: e.target.value })}
           >
@@ -2898,7 +2899,7 @@ function ModelForm({
                 {n}
               </option>
             ))}
-          </select>
+          </DropdownSelect>
         </Field>
         <Field label="方舟模型 ID">
           <input
@@ -2909,7 +2910,7 @@ function ModelForm({
           />
         </Field>
         <Field label="API 模式">
-          <select
+          <DropdownSelect
             value={v.apiMode}
             onChange={(e) =>
               setV({
@@ -2922,7 +2923,7 @@ function ModelForm({
           >
             <option value="responses">Responses</option>
             <option value="chat_completions">Chat Completions</option>
-          </select>
+          </DropdownSelect>
         </Field>
         <Field label={value.id ? "API Key（留空保持）" : "API Key"}>
           <input

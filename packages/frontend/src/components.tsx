@@ -1,11 +1,13 @@
 import { Children, cloneElement, createContext, isValidElement, useContext, useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import type { ReactNode, InputHTMLAttributes } from 'react';
+import { DropdownSelect } from './DropdownSelect';
 export { UserMenu, UserMenuIcon } from './UserMenu';
 export { InfoTip } from './InfoTip';
 export { RecordActions } from './RecordActions';
 export { SearchSelect } from './SearchSelect';
 export { ChoiceSelect } from './ChoiceSelect';
+export { DropdownSelect };
 export { EntitySelect } from './EntitySelect';
 export { NotificationCenter } from './NotificationCenter';
 export { ApplicationSwitcher } from './ApplicationSwitcher';
@@ -206,7 +208,9 @@ export function Money({ value }: { value: string | number }) { return <span clas
 export function Field({ label, children, hint }: { label: string; children: ReactNode; hint?: string }) {
   const labelId = useId();
   const required = Children.toArray(children).some(child => isValidElement<{ required?: boolean }>(child) && child.props.required);
-  const controls = Children.map(children, child => isValidElement<InputHTMLAttributes<HTMLInputElement>>(child) && child.type === PasswordInput ? cloneElement(child, { 'aria-labelledby': child.props['aria-labelledby'] ?? labelId }) : child);
+  const controls = Children.map(children, child => isValidElement<InputHTMLAttributes<HTMLInputElement>>(child)
+    && (child.type === PasswordInput || child.type === DropdownSelect)
+    && !child.props['aria-label'] ? cloneElement(child, { 'aria-labelledby': child.props['aria-labelledby'] ?? labelId }) : child);
   return <label className="field"><span id={labelId}>{label}{required && <span className="required-mark" aria-hidden="true"> *</span>}</span>{controls}{hint && <small>{hint}</small>}</label>;
 }
 

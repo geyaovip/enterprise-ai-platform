@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { RecordActions, DataResult } from '../components';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
@@ -32,7 +33,7 @@ export function WorkItemsPage({ tenantKey }: { tenantKey: string }) {
   return <>
     <PageTitle title="我的待办"  action={<><Link className="button" to={`/t/${tenantKey}/erp/workflows?view=sent`}>我发起的</Link><button type="button" onClick={() => void reload()}>刷新待办</button></>} />
     <form className="toolbar" onSubmit={e => { e.preventDefault(); setQuery(search); setPage(1); }}>
-      <Field label="事项类型"><select value={kind} onChange={e => { setKind(e.target.value); setPage(1); }}>{kinds.filter(([id]) => id === 'all' || id === kind || !data || data.counts[id] > 0).map(([id, title]) => <option key={id} value={id}>{title}{id !== 'all' ? ` (${data?.counts[id] ?? 0})` : ''}</option>)}</select></Field>
+      <Field label="事项类型"><DropdownSelect value={kind} onChange={e => { setKind(e.target.value); setPage(1); }}>{kinds.filter(([id]) => id === 'all' || id === kind || !data || data.counts[id] > 0).map(([id, title]) => <option key={id} value={id}>{title}{id !== 'all' ? ` (${data?.counts[id] ?? 0})` : ''}</option>)}</DropdownSelect></Field>
       <Field label="搜索事项"><input maxLength={100} value={search} onChange={e => setSearch(e.target.value)} placeholder="事项、单号或业务对象" /></Field><button>查询</button>
     </form>
 

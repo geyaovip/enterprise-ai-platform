@@ -105,7 +105,7 @@
   padding: 12px 0;
   border-bottom: 1px solid var(--border);
 }
-.geo-member select {
+.geo-member .dropdown-select-trigger {
   width: auto;
   max-width: 180px;
 }
@@ -162,7 +162,7 @@
   }
   .geo-app input,
   .geo-app textarea,
-  .geo-app select {
+  .geo-app .dropdown-select-trigger {
     max-width: 100%;
     min-width: 0;
   }
@@ -225,7 +225,7 @@
 .geo-evidence > button:hover { color:var(--brand); }
 .geo-filters { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; margin-bottom:16px; }
 .geo-filters .field { min-width:0; margin:0; }
-.geo-filters select { min-width:0; width:100%; }
+.geo-filters .dropdown-select-trigger { min-width:0; width:100%; }
 .geo-consequence { color:var(--warning); font-size:13px; }
 @media(max-width:767px){
  .geo-section-head h2{font-size:17px;}

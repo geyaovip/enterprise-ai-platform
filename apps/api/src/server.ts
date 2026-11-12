@@ -5,6 +5,12 @@ import { json, urlencoded } from 'express';
 import type { Request, Response, NextFunction } from 'express';
 import { AppModule } from './modules/app.module';
 import { ApiExceptionFilter } from './modules/api-exception.filter';
+import { CONNECTOR_APPS } from './modules/connectors/connector-policy';
+
+const nativeConnectorPaths = new Set([
+  ...CONNECTOR_APPS.map(app => '/api/v1/mcp/' + app),
+  ...['register','token','revoke'].map(action => '/api/v1/oauth/' + action),
+]);
 
 export async function createApp() {
   const app = await NestFactory.create(AppModule, { abortOnError: false, bodyParser: false, bufferLogs: true, logger: process.env.NODE_ENV === 'test' ? false : undefined });
@@ -17,7 +23,7 @@ export async function createApp() {
   const origins = (process.env.WEB_ORIGINS ?? webOrigin).split(',').map(x => x.trim());
   app.enableCors({ origin: origins, credentials: true });
   app.use((req: Request, res: Response, next: NextFunction) => {
-    const nativePublic=/^\/api\/v1\/(?:mcp\/(?:erp|crm|mes)|oauth\/(?:register|token|revoke))$/.test(req.path)&&!req.headers.origin;
+    const nativePublic=nativeConnectorPaths.has(req.path)&&!req.headers.origin;
     if (req.path.startsWith('/api/v1/mcp/')&&req.headers.origin&&!origins.includes(String(req.headers.origin))) {
       res.status(403).json({error:{code:'INVALID_ORIGIN',message:'请求来源无效'}});return;
     }

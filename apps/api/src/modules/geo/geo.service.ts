@@ -803,6 +803,14 @@ export class GeoService {
     ]);
     return { items, total, page: q.page, page_size: q.page_size };
   }
+  async analysisIdForRequest(ctx: RequestContext, projectId: string, requestKey: string) {
+    this.require(ctx);
+    const row = await this.db.geoAnalysis.findFirst({
+      where: {tenantId:ctx.tenantId,projectId,requestKey,userId:ctx.userId,createdByMembershipId:ctx.membershipId},
+      select: {id:true},
+    });
+    return row?.id??null;
+  }
   async analysis(ctx: RequestContext, id: string) {
     this.require(ctx);
     const row = await this.db.geoAnalysis.findFirst({

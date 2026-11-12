@@ -1515,6 +1515,33 @@ export class ContentService {
       return batch;
     });
   }
+  async generationForRequest(c: RequestContext, projectId: string, requestKey: string) {
+    await this.project(c, projectId);
+    const batch = await this.db.contentBatch.findFirst({
+      where: {tenantId:c.tenantId,projectId,requestKey,userId:c.userId,membershipId:c.membershipId},
+      select: {id:true,createdAt:true},
+    });
+    if (!batch) return null;
+    const items = await this.db.contentGenerationItem.findMany({
+      where: {tenantId:c.tenantId,batchId:batch.id},
+      select: {id:true,status:true,errorCode:true},
+      orderBy: [{createdAt:"asc"},{id:"asc"}],
+    });
+    const attempts = await this.db.contentProviderAttempt.findMany({
+      where: {tenantId:c.tenantId,itemId:{in:items.map(item=>item.id)},status:"completed"},
+      select: {itemId:true,resultAssetId:true},
+    });
+    const assets = new Map(attempts.map(attempt=>[attempt.itemId,attempt.resultAssetId]));
+    return {...batch,items:await Promise.all(items.map(async item=>{
+      const id=assets.get(item.id);
+      if(!id)return {...item,assetId:null};
+      try { return {...item,assetId:(await this.asset(c,id)).id}; }
+      catch(error) {
+        if(!(error instanceof NotFoundException))throw error;
+        return {...item,assetId:null};
+      }
+    }))};
+  }
   async batches(c: RequestContext, projectId: string, query?: unknown) {
     await this.project(c, projectId);
     const q = readBody(pageInput, query ?? {});

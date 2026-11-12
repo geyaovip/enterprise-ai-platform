@@ -1,9 +1,27 @@
 import { HttpException } from '@nestjs/common';
-export const MARKETPLACE_CONNECTOR_IDS={"erp": "oc_06ab32b1a28708ab", "crm": "oc_dcfa66bf4a96b64a", "mes": "oc_ea90fbdbc89d6582"};
-export const CONNECTOR_APPS = ['erp','crm','mes'] as const;
+const MARKETPLACE_CONNECTOR_IDS: Partial<Record<ConnectorApp, string>>={"erp": "oc_06ab32b1a28708ab", "crm": "oc_dcfa66bf4a96b64a", "mes": "oc_ea90fbdbc89d6582"};
+export const CONNECTOR_APPS = ['erp','crm','mes','content','geo','manufacturing'] as const;
 export type ConnectorApp = typeof CONNECTOR_APPS[number];
-export const CONNECTOR_NAMES = {erp:'知行方舟 ERP',crm:'知行方舟 CRM',mes:'知行方舟 MES'};
-export const DRAFT_PERMISSIONS = {erp:'erp.purchase.write',crm:'crm.task.write',mes:'mes.plan.write'};
+export const CONNECTOR_NAMES = {erp:'知行方舟 ERP',crm:'知行方舟 CRM',mes:'知行方舟 MES',content:'知行方舟 品牌内容',geo:'知行方舟 GEO',manufacturing:'知行方舟 制造业进销存'};
+const DRAFT_PERMISSIONS = {erp:'erp.purchase.write',crm:'crm.task.write',mes:'mes.plan.write'};
+export type DraftConnectorApp = keyof typeof DRAFT_PERMISSIONS;
+const EXECUTION_PERMISSIONS = {content:'content.create',geo:'geo.analysis.run'};
+export type ExecutionConnectorApp = keyof typeof EXECUTION_PERMISSIONS;
+export function supportsDraft(app: ConnectorApp): app is DraftConnectorApp {
+  return Object.hasOwn(DRAFT_PERMISSIONS, app);
+}
+export function supportsExecution(app: ConnectorApp): app is ExecutionConnectorApp {
+  return Object.hasOwn(EXECUTION_PERMISSIONS, app);
+}
+export const connectorScopes = (app: ConnectorApp) =>
+  [app + '.read', ...(supportsDraft(app) ? [app + '.draft'] : supportsExecution(app) ? [app + '.execute'] : [])];
+export const canPrepareDraft = (app: ConnectorApp, permissions: readonly string[]) =>
+  supportsDraft(app) && permissions.includes(DRAFT_PERMISSIONS[app]);
+export const canExecute = (app: ConnectorApp, permissions: readonly string[]) =>
+  supportsExecution(app) && permissions.includes(EXECUTION_PERMISSIONS[app]) &&
+  (app!=='content' || permissions.includes('content.ai.use'));
+export const canReadConnector = (app: ConnectorApp, permissions: readonly string[]) =>
+  permissions.some(permission => permission.startsWith(app + '.') && permission.endsWith('.read'));
 export function appId(value:string):ConnectorApp {
   if(!(CONNECTOR_APPS as readonly string[]).includes(value))oauthError('invalid_target','不支持的应用',400);
   return value as ConnectorApp;
@@ -26,7 +44,7 @@ export function redirectAllowed(raw:string) {
   try {
     const u=new URL(raw);
     if(u.username||u.password||u.search||u.hash)return false;
-    if(u.protocol==='workbuddy:'&&u.hostname==='workbuddy')return CONNECTOR_APPS.some(app=>['zhixing-ark-'+app,MARKETPLACE_CONNECTOR_IDS[app]].some(source=>decodeURIComponent(u.pathname)==='/mcp/connector:'+source+'/oauth/callback'));
+    if(u.protocol==='workbuddy:'&&u.hostname==='workbuddy')return CONNECTOR_APPS.some(app=>['zhixing-ark-'+app,MARKETPLACE_CONNECTOR_IDS[app]].some(source=>source && decodeURIComponent(u.pathname)==='/mcp/connector:'+source+'/oauth/callback'));
     return u.protocol==='http:'&&u.hostname==='127.0.0.1'&&Number(u.port)>=1024&&u.pathname==='/oauth/callback';
   }catch{return false;}
 }

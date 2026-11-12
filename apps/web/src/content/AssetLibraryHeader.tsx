@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import {
@@ -153,7 +154,7 @@ export function LibraryTimeSort({
 }) {
   return (
     <>
-      <select
+      <DropdownSelect
         className="content-library-select"
         aria-label={canvas ? "画布修改时间" : "素材添加时间"}
         value={days}
@@ -163,8 +164,8 @@ export function LibraryTimeSort({
         <option value="7">近 7 天</option>
         <option value="30">近 30 天</option>
         <option value="90">近 90 天</option>
-      </select>
-      <select
+      </DropdownSelect>
+      <DropdownSelect
         className="content-library-select"
         aria-label={canvas ? "画布排序" : "素材排序"}
         value={sort}
@@ -175,7 +176,7 @@ export function LibraryTimeSort({
         </option>
         <option value="oldest">{canvas ? "最早修改" : "最早添加"}</option>
         <option value="name">名称排序</option>
-      </select>
+      </DropdownSelect>
     </>
   );
 }

@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { useSearchParams, Link } from 'react-router-dom';
 import { ForwardIcon, PageTitle, DataResult, Empty } from '../components';
 import { useApiData } from '../hooks';
@@ -25,9 +26,9 @@ export function CrmOverview() {
   ];
   return <div className="crm-overview">
     <PageTitle title="客户总览" action={<>
-      {(c.can('crm.analytics.read') || c.can('crm.segment.read')) && <select aria-label="统计币种" value={currency} onChange={event => {
+      {(c.can('crm.analytics.read') || c.can('crm.segment.read')) && <DropdownSelect aria-label="统计币种" value={currency} onChange={event => {
         const next = new URLSearchParams(params); next.set('currency', event.target.value); setParams(next);
-      }}>{currencies.map(value => <option key={value}>{value}</option>)}</select>}
+      }}>{currencies.map(value => <option key={value}>{value}</option>)}</DropdownSelect>}
       <button type="button" disabled={busy} onClick={() => void refresh()}>{busy ? '更新中…' : '刷新'}</button>
       <CrmNewCustomer onCreated={refresh}/>
     </>}/>

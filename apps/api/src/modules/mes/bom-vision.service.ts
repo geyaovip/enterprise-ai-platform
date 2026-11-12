@@ -152,13 +152,17 @@ export class BomVisionService{
   });
  }
  private tables(file:File,page:Page,index:number,id:string,p:PagePreparation,primary:VisionCall,secondary:VisionCall|undefined,reasons:string[]):PageResult{
-  const a=primary.answer,b=secondary?.answer;const chosen=b??a;
+  const a=primary.answer,b=secondary?.answer;
+  const chosenCall=secondary?.answer?secondary:primary,chosen=chosenCall.answer;
   if(!chosen)throw new BomVisionError('BOM_VISION_SCHEMA_INVALID');
+  const recheckWarning=secondary&&!b?'Kimi复核结果无法读取，已保留GLM候选，请对照原件核对':null;
   const difference=Boolean(a&&b&&!sameVisionFacts(a,b));
   const comparisons=a&&b?compareVisionRows(a,b):[];
   const calls=[primary,...(secondary?[secondary]:[])];
   const vision={jobId:id,fileId:file.id,pageIndex:index,models:calls.map(c=>c.model),usageIds:calls.map(c=>c.usageId),promptSha256:PROMPT_SHA};
-  const table:BomTable={warnings:reasons.filter(v=>/序号重复|多机型|多个适用机型/.test(v)).map(v=>v.includes('序号重复')?'识别结果中序号重复，可能有多个装配或机型；请按原件筛选本次适用明细，不要把整页混成同一BOM':v),file:file.filename,page:/\.pdf$/i.test(file.filename)?page.page:undefined,table:1,method:(secondary??primary).requestedModel===KIMI?'vision-kimi':'vision-glm',sourceSha256:file.sha256,productCode:file.productCode,revision:file.revision,pageSize:[p.width,p.height],vision,rows:chosen.rows.map((r,i)=>{
+  const warnings=reasons.filter(v=>/序号重复|多机型|多个适用机型/.test(v)).map(v=>v.includes('序号重复')?'识别结果中序号重复，可能有多个装配或机型；请按原件筛选本次适用明细，不要把整页混成同一BOM':v);
+  if(recheckWarning)warnings.push(recheckWarning);
+  const table:BomTable={warnings,file:file.filename,page:/\.pdf$/i.test(file.filename)?page.page:undefined,table:1,method:chosenCall.requestedModel===KIMI?'vision-kimi':'vision-glm',sourceSha256:file.sha256,productCode:file.productCode,revision:file.revision,pageSize:[p.width,p.height],vision,rows:chosen.rows.map((r,i)=>{
    const comparison=comparisons[i];
    const why=['视觉识别候选，定位行号为候选顺序，不代表原表物理行号；须核对身份、数量、单位、机型与版本',...(comparison&&(!comparison.aligned||comparison.different)?['GLM与Kimi本行存在字段差异或无法唯一对齐，请按原件核对']:[]),...chosen.uncertainties];
    const row:any={item:r.item??'',sourceRow:i+1,rawCells:[r.item,r.part,r.name,r.spec,r.mpn,r.designators,r.qty,r.sourceQty,r.unit,r.length].map(x=>x??''),confidence:0,sku:r.part??'',name:r.name??'',quantity:r.qty??'',unverifiedQuantity:r.sourceQty??r.qty??'',unit:r.unit??'',mpn:r.mpn??'',manufacturer:r.manufacturer??'',designators:r.designators??'',population:r.population??'',spec:r.spec??'',length:r.length??'',revision:r.revision??'',quantities:r.quantities,reviewReasons:why};
@@ -167,7 +171,7 @@ export class BomVisionService{
    if(comparison){row.visionIdentityConflict=!comparison.aligned||comparison.identityDifferent;if(comparison.quantityDifferent){row.quantity='';row.reviewReasons.push('两次视觉的数量、单位或适用数量不一致，未自动采用；请按原件填写本行用量');}if(!comparison.aligned)row.reviewReasons.push('两次结果未能按唯一序号或身份对齐，本行不能引用其他行的读值');const other=comparison.other;if(other&&comparison.different)row.reviewReasons.push('GLM同序候选：'+JSON.stringify({item:other.item,part:other.part,name:other.name,mpn:other.mpn,designators:other.designators,qty:other.qty,sourceQty:other.sourceQty,unit:other.unit,quantities:other.quantities,population:other.population,revision:other.revision}).slice(0,1000));}
    return row;
   })};
-  return {version:VERSION,complete:true,tables:table.rows.length?[table]:[],primary,secondary,reasons:[...reasons,...(difference&&!chosen.rows.length?['Kimi未确认可用明细，GLM候选保留供追溯；请按原件人工核对，不自动采用']:[])],hasDifference:difference};
+  return {version:VERSION,complete:true,tables:table.rows.length?[table]:[],primary,secondary,reasons:[...reasons,...(recheckWarning?[recheckWarning]:[]),...(difference&&!chosen.rows.length?['Kimi未确认可用明细，GLM候选保留供追溯；请按原件人工核对，不自动采用']:[])],hasDifference:difference};
  }
  async tick():Promise<boolean>{
   const stale=new Date(Date.now()-600000);
@@ -215,7 +219,6 @@ export class BomVisionService{
        if(manual&&kimiVisionEnabled()||automaticKimiRecheck(primary.answer,prepared)){await this.context(job);secondary=await this.provider.run({...scope,slot:1},KIMI,image,controller.signal);}
        else reasons.push(kimiVisionEnabled()?'本页保留人工核对提示，未自动追加第二次模型调用':'第二视觉模型未启用，疑点请按原件人工核对');
       }
-      if(secondary&&!secondary.schemaValid||!secondary&&!primary.schemaValid)throw new BomVisionError('BOM_VISION_SCHEMA_INVALID');
       cached=this.tables(file,page,cursor,job.id,prepared,primary,secondary,reasons);
      }
     }

@@ -1,14 +1,15 @@
+import { lockStock, trackingInput } from './warehouse-allocation';
 import { Injectable } from '@nestjs/common';
 import { z } from 'zod';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
 import type { RequestContext } from '../platform/context';
 import { readBody } from '../platform/security';
-import { audit, conflict, failNotFound, label, pageQuery, dateFilter } from './erp.common';
+import { audit, conflict, failNotFound, label, pageQuery, dateFilter, type Transaction } from './erp.common';
 import { stockMove, warehouse, warehouseBalance } from './stock-ledger';
 import { qty } from './trade.common';
 
-const stocktakeInput = z.object({ warehouseId: z.uuid().optional(), documentNumber: label(80), note: z.string().max(2000).optional(), lines: z.array(z.object({ productId: z.uuid(), countedQty: z.number().min(0).refine(x => Math.abs(x * 1000000 - Math.round(x * 1000000)) < 0.000001, "数量最多六位小数").max(1_000_000_000), version: z.int().positive() })).min(1).max(100) }).refine(x => new Set(x.lines.map(l => l.productId)).size === x.lines.length, '同一商品不能重复');
+const stocktakeInput = z.object({ warehouseId: z.uuid().optional(), documentNumber: label(80), note: z.string().max(2000).optional(), lines: z.array(z.object({ productId: z.uuid(), countedQty: z.number().min(0).refine(x => Math.abs(x * 1000000 - Math.round(x * 1000000)) < 0.000001, "数量最多六位小数").max(1_000_000_000), version: z.int().positive(), tracking: trackingInput.optional() })).min(1).max(100) }).refine(x => new Set(x.lines.map(l => l.productId)).size === x.lines.length, '同一商品不能重复');
 
 @Injectable()
 export class InventoryService {
@@ -97,12 +98,11 @@ export class InventoryService {
     return { items: items.map(x => ({ ...x, movements: x.movements.map(m => ({ ...m, product: products.find(p => p.id === m.productId) })) })), total, page: q.page, page_size: q.page_size };
   }
 
-  async stocktake(ctx: RequestContext, body: unknown) {
+  async stocktake(ctx: RequestContext, body: unknown, external?: Transaction) {
     this.auth.require(ctx, 'erp.inventory.write');
     const input = readBody(stocktakeInput, body);
-    const balances = await this.db.erpInventoryBalance.findMany({ where: { tenantId: ctx.tenantId, productId: { in: input.lines.map(l => l.productId) } } });
-    if (balances.length !== input.lines.length) failNotFound('盘点商品');
-    return this.db.$transaction(async tx => {
+    const run = async (tx: Transaction) => {
+      await lockStock(tx, ctx.tenantId);
       const currentBalances=await tx.erpInventoryBalance.findMany({where:{tenantId:ctx.tenantId,productId:{in:input.lines.map(l=>l.productId)}}});
       const doc = await tx.erpStockDocument.create({ data: { tenantId: ctx.tenantId, number: input.documentNumber, kind: 'stocktake', sourceId: 'inventory', note: input.note, actorMembershipId: ctx.membershipId } });
       const changes: Array<{ productId: string; before: number; after: number }> = [];
@@ -112,13 +112,19 @@ export class InventoryService {
         if (old.version !== line.version) conflict('库存已变化，请刷新后重新盘点');
         const wh = await warehouse(tx, ctx, input.warehouseId);
         const local = await warehouseBalance(tx, ctx, line.productId, wh.id);
-        const delta = qty(line.countedQty - local.quantity);
-        changes.push({ productId: line.productId, before: local.quantity, after: line.countedQty });
-        if (delta) await stockMove(tx, ctx, { productId: line.productId, warehouseId: wh.id, direction: delta > 0 ? 'in' : 'out', quantity: Math.abs(delta), sourceType: 'stocktake', sourceId: doc.id, documentId: doc.id });
+        const tracked = line.tracking && await tx.erpTrackedStock.findUnique({ where: { tenantId_warehouseId_productId_code: {
+          tenantId: ctx.tenantId, warehouseId: wh.id, productId: line.productId, code: line.tracking.code,
+        } } });
+        if (tracked && tracked.kind !== line.tracking?.kind) conflict('追溯类型和库存记录不一致');
+        const before = line.tracking ? Number(tracked ? tracked.quantity : 0) : local.quantity;
+        const delta = qty(line.countedQty - before);
+        changes.push({ productId: line.productId, before, after: line.countedQty });
+        if (delta) await stockMove(tx, ctx, { productId: line.productId, warehouseId: wh.id, direction: delta > 0 ? 'in' : 'out', quantity: Math.abs(delta), tracking: line.tracking, sourceType: 'stocktake', sourceId: doc.id, documentId: doc.id });
 
       }
       await audit(tx, ctx, 'erp.inventory.stocktake', 'StockDocument', doc.id, { changes });
       return tx.erpStockDocument.findUniqueOrThrow({ where: { id: doc.id }, include: { movements: true } });
-    }, { isolationLevel: 'Serializable' });
+    };
+    return external ? run(external) : this.db.$transaction(run, { isolationLevel: 'Serializable' });
   }
 }

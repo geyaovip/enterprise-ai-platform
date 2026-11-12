@@ -10,7 +10,7 @@ import { ConfirmDialog, Empty, Field, Loading, Money, Notice, PageTitle, Pager, 
 import { useApiData } from '../hooks';
 import type { Account, Balance, InventoryAlert, Page, StockDocument, StockMovement } from '../types';
 
-const movementSources: Record<string, string> = { transfer:'仓库调拨', opening:'期初库存', sales_return:'销售退货', purchase_return:'采购退货', purchase: '采购单', contract: '销售合同', stocktake: '盘点单' };
+const movementSources: Record<string, string> = { material_issue:'生产领料', material_return:'生产退料', production_receipt:'成品入库', manufacturing_shipment:'制造订单发货', transfer:'仓库调拨', opening:'期初库存', sales_return:'销售退货', purchase_return:'采购退货', purchase: '采购单', contract: '销售合同', stocktake: '盘点单' };
 
 type Props = { tenantKey: string; role?: string };
 

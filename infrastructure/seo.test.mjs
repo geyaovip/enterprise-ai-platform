@@ -30,10 +30,10 @@ for(const route of routes){
   crumb.itemListElement.forEach((x,i)=>{assert.equal(x.position,i+1);assert.ok(routes.includes(new URL(x.item).pathname));assert.ok(html.includes(x.name));});
   assert.match(html,/<nav class="breadcrumb"/);
  }
- if(route==='/products')assert.deepEqual(graph.find(x=>x['@type']==='ItemList').itemListElement.map(x=>x.url),['erp','crm','mes','content','geo'].map(x=>origin+'/products#'+x));
+ if(route==='/products')assert.deepEqual(graph.find(x=>x['@type']==='ItemList').itemListElement.map(x=>x.url),['erp','crm','mes','content','geo','manufacturing'].map(x=>origin+'/products#'+x));
  if(route==='/products'){
-  const apps=graph.filter(x=>x['@type']==='SoftwareApplication');assert.equal(apps.length,5);
-  for(const app of apps){assert.equal(new URL(app.url).pathname,'/products');assert.ok(html.includes('id="'+new URL(app.url).hash.slice(1)+'"'));assert.equal(app.featureList.length,['#content','#geo'].includes(new URL(app.url).hash)?4:6);app.featureList.forEach(x=>assert.ok(html.includes(x)));assert.ok(!('screenshot'in app)&&!('offers'in app)&&!('aggregateRating'in app)&&!('review'in app));}
+  const apps=graph.filter(x=>x['@type']==='SoftwareApplication');assert.equal(apps.length,6);
+  for(const app of apps){assert.equal(new URL(app.url).pathname,'/products');assert.ok(html.includes('id="'+new URL(app.url).hash.slice(1)+'"'));assert.equal(app.featureList.length,['#content','#geo','#manufacturing'].includes(new URL(app.url).hash)?4:6);app.featureList.forEach(x=>assert.ok(html.includes(x)));assert.ok(!('screenshot'in app)&&!('offers'in app)&&!('aggregateRating'in app)&&!('review'in app));}
  }
  for(const agent of ['Googlebot','bingbot','Baiduspider']){const crawler=await worker.fetch(new Request(origin+route,{headers:{'user-agent':agent}}),env);assert.equal(await crawler.text(),html);}
 }

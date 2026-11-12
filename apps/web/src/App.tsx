@@ -1,3 +1,4 @@
+import { ManufacturingPage, manufacturingNavigation } from './manufacturing/ManufacturingPage';
 import {GeoPage,geoNavigation} from './geo/GeoPage';
 import {contentNavigation} from './content/navigation';
 import {ContentHistory,ContentNavIcon} from './content/ContentHistory';
@@ -50,6 +51,7 @@ function ContentApplication(props:{tenantKey:string;permissions:readonly string[
 registerBusinessApplication({appId:'geo',routePrefix:'/geo',description:'多模型品牌监测、分析与优化复测',shortName:'GEO',Page:GeoPage});
 registerBusinessApplication({appId:'content',routePrefix:'/content',description:'品牌图文创作、审核与交付',shortName:'内容',Page:ContentApplication});
 registerBusinessApplication({appId:'mes',routePrefix:'/mes',description:'BOM、生产计划与工单执行',shortName:'MES',Page:MesPage});
+registerBusinessApplication({appId:'manufacturing',routePrefix:'/manufacturing',description:'接单、备料采购、生产和发货',shortName:'制造',Page:ManufacturingPage});
 registerBusinessApplication({appId:'crm',routePrefix:'/crm',description:'销售跟进、客户运营与服务',shortName:'CRM',Page:CrmPage});
 
 export function App() { return <><BrandIdentity/><WorkspaceApp/></>; }
@@ -179,7 +181,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
   const contentMeta=useApiData<any>(apps?.some(x=>x.appId==='content'&&x.enabled&&x.granted)&&applicationCatalog.data?.some(a=>a.appId==='content'&&a.permissions.length)?tenantApi(tenantKey,'/apps/content/metadata'):null);
   const enabledApplications = [
     ...(apps?.some(x=>x.appId==='erp'&&x.enabled&&x.granted)&&applicationCatalog.data?.some(a=>a.appId==='erp'&&a.permissions.length)?[{id:'erp',name:'进销存 ERP',shortName:'ERP',description:'销售、采购、库存与财务',routePrefix:'/erp',icon:<ErpApplicationIcon/>,paths:erpNav.filter(item=>(item.roles as readonly string[]).includes(membership?.role??'')||(item.path==='erp/contracts'&&permissions.includes('erp.sales.read'))||(item.path==='erp/purchases'&&permissions.includes('erp.purchase.read'))).map(item=>'/'+item.path).filter(path=>!path.endsWith('/ai'))}]:[]),
-    ...businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix&&a.permissions.length)&&apps?.some(a=>a.appId===entry.appId&&a.enabled&&a.granted)).map(entry=>({id:entry.appId,name:entry.appId==='crm'?'客户 CRM':applicationCatalog.data!.find(a=>a.appId===entry.appId)!.displayName,shortName:entry.shortName??entry.appId.toUpperCase(),description:entry.description??'企业业务应用',routePrefix:entry.routePrefix,icon:entry.appId==='crm'?<CrmApplicationIcon/>:entry.appId==='mes'?<MesApplicationIcon/>:<ApplicationIcon/>,paths:entry.appId==='geo'?geoNavigation.filter(([, ,p])=>geoMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='content'?contentNavigation.filter(([, ,p])=>contentMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='crm'?crmNavigation.filter(([, ,p])=>crmMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='mes'?mesNavigation.filter(([, ,p])=>mesMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):[entry.routePrefix]})),
+    ...businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix&&a.permissions.length)&&apps?.some(a=>a.appId===entry.appId&&a.enabled&&a.granted)).map(entry=>({id:entry.appId,name:entry.appId==='crm'?'客户 CRM':applicationCatalog.data!.find(a=>a.appId===entry.appId)!.displayName,shortName:entry.shortName??entry.appId.toUpperCase(),description:entry.description??'企业业务应用',routePrefix:entry.routePrefix,icon:entry.appId==='crm'?<CrmApplicationIcon/>:entry.appId==='mes'?<MesApplicationIcon/>:<ApplicationIcon/>,paths:entry.appId==='geo'?geoNavigation.filter(([, ,p])=>geoMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='content'?contentNavigation.filter(([, ,p])=>contentMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='crm'?crmNavigation.filter(([, ,p])=>crmMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='mes'?mesNavigation.filter(([, ,p])=>mesMeta.data?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):entry.appId==='manufacturing'?manufacturingNavigation.filter(([, ,p])=>applicationCatalog.data?.find(a=>a.appId===entry.appId)?.permissions.includes(p)).map(([path])=>entry.routePrefix+(path?'/'+path:'')):[entry.routePrefix]})),
   ];
   const applicationNavigation = useApplicationNavigation(me.user.id,tenantKey,enabledApplications,apps!==null&&!!applicationCatalog.data);
   if (!membership) return <main className="picker"><Notice text="无权访问此企业" /><Link to="/tenants">返回企业选择</Link></main>;
@@ -193,6 +195,9 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
   const contentEnabled=apps?.some(x=>x.appId==='content'&&x.enabled&&x.granted)??false;
   const businessScope=geoActive?'geo':contentActive?'content':mesActive?'mes':crmActive?'crm':'erp';
   const appAiAllowed=geoActive?geoMeta.data?.permissions.includes('geo.ai.use'):contentActive?contentMeta.data?.permissions.includes('content.ai.use'):mesActive?mesMeta.data?.permissions.includes('mes.ai.use'):crmActive?crmMeta.data?.permissions.includes('crm.ai.use'):applicationNavigation.currentId==='erp';
+  const manufacturingActive=applicationNavigation.currentId==='manufacturing';
+  const manufacturingPermissions=applicationCatalog.data?.find(a=>a.appId==='manufacturing')?.permissions??[];
+  const manufacturingEnabled=enabledApplications.some(a=>a.id==='manufacturing');
   const mesEnabled=apps?.some(x=>x.appId==='mes'&&x.enabled&&x.granted)??false;
   const erpEnabled = apps?.some(x => x.appId === 'erp' && x.enabled && x.granted) ?? false;
   const knowledgeEnabled = capabilities.some(c => c.capability === 'knowledge' && c.delivered && c.enabled);
@@ -200,7 +205,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
   const active = (path: string) => path === 'erp' ? location.pathname === `${prefix}/erp` : location.pathname === `${prefix}/${path}` || location.pathname.startsWith(`${prefix}/${path}/`);
   const aiRoute=/\/(?:erp\/|crm\/|mes\/|content\/|geo\/)?ai$/.test(location.pathname);
   return <div className={"app-shell"+(contentActive?" content-shell":"")}>
-    <ShellToolbar menuOpen={menu} label={enabledApplications.find(app => app.id === applicationNavigation.currentId)?.name ?? '业务工作台'} onMenu={() => setMenu(true)} aiAction={<button type="button" className="ask-ai-trigger" aria-label="询问 AI" disabled={!appAiAllowed} title={!appAiAllowed?(contentActive?'当前岗位未授权使用品牌内容创作官':mesActive?mesMeta.data?.aiAvailability?.message:crmMeta.data?.aiAvailability?.message)??'当前应用未开放AI助手':undefined} aria-expanded={aiOpen || aiRoute} onClick={() => {setMenu(false);setAiOpen(true);}}><Sparkles size={20} aria-hidden="true"/><span>询问AI</span></button>} />
+    <ShellToolbar menuOpen={menu} label={enabledApplications.find(app => app.id === applicationNavigation.currentId)?.name ?? '业务工作台'} onMenu={() => setMenu(true)} aiAction={manufacturingActive?null:<button type="button" className="ask-ai-trigger" aria-label="询问 AI" disabled={!appAiAllowed} title={!appAiAllowed?(contentActive?'当前岗位未授权使用品牌内容创作官':mesActive?mesMeta.data?.aiAvailability?.message:crmMeta.data?.aiAvailability?.message)??'当前应用未开放AI助手':undefined} aria-expanded={aiOpen || aiRoute} onClick={() => {setMenu(false);setAiOpen(true);}}><Sparkles size={20} aria-hidden="true"/><span>询问AI</span></button>} />
     {menu && <button className="scrim" aria-label="关闭导航" onClick={() => setMenu(false)} />}
     <a className="skip-link" href="#main-content">跳到页面内容</a>
     <aside id="shell-navigation" className={`sidebar ${menu ? 'open' : ''}`}>
@@ -213,7 +218,15 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
         {crmActive&&<CrmNavigation key={tenantKey} prefix={prefix} permissions={crmMeta.data?.permissions ?? []}/>}
 
         {mesActive&&<section className="nav-group" aria-label="MES导航"><h2>制造执行</h2>{mesNavigation.filter(([, ,p])=>mesMeta.data?.permissions.includes(p)).map(([path,label])=>{const current=path?active('mes/'+path):location.pathname===prefix+'/mes';return <Link key={path} to={prefix+'/mes'+(path?'/'+path:'')} className={current?'active':''} aria-current={current?'page':undefined}><NavIcon name={path==='settings'?'business-settings':path==='reports'?'mes-reports':path||'mes'}/>{label}</Link>;})}</section>}
-        {erpEnabled && !crmActive && !mesActive && !contentActive && !geoActive && erpNavGroups.map(group => {
+        {manufacturingActive && <section className="nav-group" aria-label="制造业进销存导航">
+          {manufacturingNavigation.filter(([, ,p])=>manufacturingPermissions.includes(p)).map(([path,label])=>{
+            const route=path?'manufacturing/'+path:'manufacturing';
+            const current=path?active(route):location.pathname===prefix+'/manufacturing'||active('manufacturing/orders');
+            return <Link key={path} to={prefix+'/'+route} className={current?'active':''} aria-current={current?'page':undefined}>
+              <NavIcon name={path?'business-settings':'erp/contracts'}/>{label}</Link>;
+          })}
+        </section>}
+        {erpEnabled && !crmActive && !mesActive && !contentActive && !geoActive && !manufacturingActive && erpNavGroups.map(group => {
           const items = group.paths.map(path => erpNav.find(item => item.path === path)!).filter(item =>
             (item.roles as readonly string[]).includes(membership.role)
             || (item.path === 'erp/contracts' && permissions.includes('erp.sales.read'))
@@ -227,7 +240,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
           {geoActive && <Link aria-current={active('tasks') ? 'page' : undefined} className={active('tasks') ? 'active' : ''} to={`${prefix}/tasks`}><NavIcon name="tasks"/>任务中心</Link>}
           {knowledgeEnabled && <Link aria-current={active('knowledge') ? 'page' : undefined} className={active('knowledge') ? 'active' : ''} to={`${prefix}/knowledge`}><NavIcon name="knowledge"/>企业知识库</Link>}
           <Link aria-current={active('channels') ? 'page' : undefined} className={active('channels') ? 'active' : ''} to={`${prefix}/channels`}><NavIcon name="channels"/>消息与通知</Link>
-          {erpEnabled && !crmActive && !mesActive && !contentActive && !geoActive && membership.role === 'admin' && <Link aria-current={active('erp/business-settings') ? 'page' : undefined} className={active('erp/business-settings') ? 'active' : ''} to={`${prefix}/erp/business-settings`}><NavIcon name="erp/business-settings"/>企业业务设置</Link>}
+          {erpEnabled && !crmActive && !mesActive && !contentActive && !geoActive && !manufacturingActive && membership.role === 'admin' && <Link aria-current={active('erp/business-settings') ? 'page' : undefined} className={active('erp/business-settings') ? 'active' : ''} to={`${prefix}/erp/business-settings`}><NavIcon name="erp/business-settings"/>企业业务设置</Link>}
           {membership.role === 'admin' && <a href={`${import.meta.env.VITE_TENANT_ADMIN_URL ?? 'http://127.0.0.1:4603'}/t/${tenantKey}`}><NavIcon name="tenants"/>企业管理</a>}
         </section>
       </nav>
@@ -240,7 +253,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
       </UserMenu></div>
     </aside>
     <main id="main-content" tabIndex={-1} className="content"><ServiceStatusProvider key={tenantKey+':'+businessScope} tenantKey={tenantKey} statusPath={businessScope!=='erp'?tenantApi(tenantKey,'/apps/'+businessScope+'/ai/status'):undefined}><Notice text={error} />{apps === null ? <Loading /> : <Routes>
-      <Route index element={<Navigate to={erpEnabled ? 'erp' : crmEnabled ? 'crm' : mesEnabled ? 'mes' : contentEnabled ? 'content' : geoEnabled ? 'geo' : knowledgeEnabled ? 'knowledge' : 'account'} replace />} />
+      <Route index element={<Navigate to={erpEnabled ? 'erp' : crmEnabled ? 'crm' : mesEnabled ? 'mes' : contentEnabled ? 'content' : geoEnabled ? 'geo' : manufacturingEnabled ? 'manufacturing' : knowledgeEnabled ? 'knowledge' : 'account'} replace />} />
       <Route path="erp" element={erpEnabled ? <DashboardPage tenantKey={tenantKey} role={membership.role} /> : <Empty text="进销存管理尚未启用，请联系企业管理员。" />} />
       <Route path="erp/quotes" element={erpEnabled ? <QuotesPage tenantKey={tenantKey} role={membership.role} /> : <Empty text="进销存管理尚未启用" />} />
       <Route path="erp/returns" element={erpEnabled ? <ReturnsPage tenantKey={tenantKey} role={membership.role} membershipId={membership.id} /> : <Empty text="进销存管理尚未启用" />} />
@@ -252,7 +265,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
       <Route path="erp/documents/:id" element={erpEnabled ? <PrintDocumentPage tenantKey={tenantKey} type="stock" /> : <Empty text="进销存管理尚未启用" />} />
       <Route path="erp/return-documents/:id" element={erpEnabled ? <PrintDocumentPage tenantKey={tenantKey} type="return" /> : <Empty text="进销存管理尚未启用" />} />
       <Route path="erp/quote-documents/:id" element={erpEnabled ? <PrintDocumentPage tenantKey={tenantKey} type="quote" /> : <Empty text="进销存管理尚未启用" />} />
-      {businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix)).map(({appId,routePrefix,Page})=><Route key={appId} path={`${routePrefix.slice(1)}/*`} element={<Page tenantKey={tenantKey} permissions={permissions} isTenantAdmin={membership.role==='admin'}/>}/>)}
+      {businessApplicationEntries().filter(entry=>applicationCatalog.data?.some(a=>a.appId===entry.appId&&a.routePrefix===entry.routePrefix)).map(({appId,routePrefix,Page})=><Route key={appId} path={`${routePrefix.slice(1)}/*`} element={<Page tenantKey={tenantKey} permissions={appId==='manufacturing'?(manufacturingEnabled?manufacturingPermissions:[]):permissions} isTenantAdmin={membership.role==='admin'}/>}/>)}
       <Route path="tasks" element={<TaskCenterPage tenantKey={tenantKey} appId={applicationNavigation.currentId}/>}/>
       <Route path="erp/replenishment" element={erpEnabled?<ReplenishmentPage tenantKey={tenantKey} canCreate={permissions.includes('erp.purchase.write')}/>:<Empty text="应用尚未启用"/>}/>
       <Route path="erp/operating-events" element={erpEnabled?<OperatingEventsPage tenantKey={tenantKey} isAdmin={membership.role==='admin'}/>:<Empty text="应用尚未启用"/>}/>

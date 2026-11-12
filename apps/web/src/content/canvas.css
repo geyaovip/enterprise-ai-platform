@@ -427,7 +427,7 @@
   font-size: 12px;
   color: var(--muted);
 }
-.canvas-compose-actions select {
+.canvas-compose-actions .dropdown-select-trigger {
   padding: 5px 8px;
   background: var(--control-hover);
   border: 1px solid var(--input-border);

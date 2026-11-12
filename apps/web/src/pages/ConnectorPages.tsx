@@ -11,24 +11,32 @@ function Frame({title,children}:{title:string;children:ReactNode}){
   useEffect(()=>{heading.current?.focus();},[title]);
   return <main className="connector-page"><header><Link to="/tenants">知行方舟</Link><Link to="/connect/connections">已连接应用</Link></header><section className="panel"><h1 tabIndex={-1} ref={heading}>{title}</h1>{children}</section></main>;
 }
-type Consent={id:string;appId:string;name:string;clientName:string;requestedScopes:string[];expiresAt:string;tenants:{key:string;name:string;draftAllowed:boolean}[];nonce:string};
+type Consent={id:string;appId:string;name:string;clientName:string;requestedScopes:string[];expiresAt:string;tenants:{key:string;name:string;draftAllowed:boolean;executionAllowed?:boolean}[];nonce:string};
 export function ConnectorAuthorizePage(){
   const [params]=useSearchParams(),id=params.get('request'),details=useApiData<Consent>(id?'/connect/requests/'+encodeURIComponent(id):null);
   const [tenant,setTenant]=useState(''),[draft,setDraft]=useState(true),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
-  useEffect(()=>{if(details.data?.tenants.length)setTenant(details.data.tenants[0].key);},[details.data]);
+  const [execution,setExecution]=useState(false);
+  useEffect(()=>{if(details.data?.tenants.length)setTenant(details.data.tenants[0].key);setExecution(false);},[details.data]);
   const selected=details.data?.tenants.find(t=>t.key===tenant),draftRequested=details.data?.requestedScopes.includes(details.data.appId+'.draft');
+  const executionRequested=details.data?.requestedScopes.includes(details.data.appId+'.execute');
+  const readOnlyDescription=details.data?.appId==='content'
+    ? '查询当前岗位有权查看的内容项目和素材信息。'
+    : details.data?.appId==='geo'?'查询当前岗位有权查看的 GEO 项目和已有分析报告。':details.data?.appId==='manufacturing'?'查询当前岗位有权查看的制造订单、库存预警、生产进度和批次追溯。':null;
   const submit=async(decision:'allow'|'deny')=>{
     if(!id||!details.data||busy)return;setBusy(true);setError(null);
-    try{const r=await api.post<{redirect:string}>('/connect/requests/'+encodeURIComponent(id),{nonce:details.data.nonce,decision,...(tenant?{tenantKey:tenant}:{}),allowDraft:Boolean(draft&&draftRequested&&selected?.draftAllowed)});window.location.assign(r.redirect);}
+    try{const r=await api.post<{redirect:string}>('/connect/requests/'+encodeURIComponent(id),{nonce:details.data.nonce,decision,...(tenant?{tenantKey:tenant}:{}),allowDraft:Boolean(draft&&draftRequested&&selected?.draftAllowed),...(executionRequested?{allowExecution:Boolean(execution&&selected?.executionAllowed)}:{})});window.location.assign(r.redirect);}
     catch(e){setError(errorText(e));setBusy(false);}
   };
   return <Frame title={details.data?'连接 '+details.data.name:'连接应用'}>
     <Notice text={error??details.error}/>
     {!id?<Notice text="连接请求不完整，请回 WorkBuddy 重新连接。"/>:details.loading&&!details.data?<Loading/>:details.data&&<>
       <p>连接后，WorkBuddy 可以按你当前的业务权限使用这个应用。请确认这是你刚发起的连接。</p>
-      <ChoiceSelect label="授权企业" value={tenant} onChange={e=>setTenant(e.target.value)} disabled={busy||!details.data.tenants.length}>{!details.data.tenants.length&&<option value="">暂无可授权企业</option>}{details.data.tenants.map(t=><option key={t.key} value={t.key}>{t.name}</option>)}</ChoiceSelect>
+      <ChoiceSelect label="授权企业" value={tenant} onChange={e=>{setTenant(e.target.value);setExecution(false);}} disabled={busy||!details.data.tenants.length}>{!details.data.tenants.length&&<option value="">暂无可授权企业</option>}{details.data.tenants.map(t=><option key={t.key} value={t.key}>{t.name}</option>)}</ChoiceSelect>
       {!details.data.tenants.length&&<p>当前没有可使用该应用的企业。你可以<Link to="/onboarding">创建或加入企业</Link>，或联系管理员分配岗位后重新连接。</p>}
-      <div className="connector-permissions"><h2>允许访问</h2><p>查询当前岗位有权查看的业务数据，计算业务预览。</p>{draftRequested&&<label><input type="checkbox" checked={draft&&Boolean(selected?.draftAllowed)} onChange={e=>setDraft(e.target.checked)} disabled={busy||!selected?.draftAllowed}/>准备业务草稿；每次保存仍需你确认</label>}<p className="muted">授权仅针对所选企业和应用，有效期最长30天。可以随时撤销；成员或业务权限变化后按最新权限执行。</p></div>
+      <div className="connector-permissions"><h2>允许访问</h2><p>{readOnlyDescription??'查询当前岗位有权查看的业务数据，计算业务预览。'}</p>
+      {draftRequested&&<label><input type="checkbox" checked={draft&&Boolean(selected?.draftAllowed)} onChange={e=>setDraft(e.target.checked)} disabled={busy||!selected?.draftAllowed}/>准备业务草稿；每次保存仍需你确认</label>}
+      {executionRequested&&<label><input type="checkbox" checked={execution&&Boolean(selected?.executionAllowed)} onChange={e=>setExecution(e.target.checked)} disabled={busy||!selected?.executionAllowed}/>{details.data.appId==='content'?'在 WorkBuddy 中提交图片或视频生成':'在 WorkBuddy 中提交 GEO 分析'}，可能产生模型费用</label>}
+      <p className="muted">授权仅针对所选企业和应用，有效期最长30天。可以随时撤销；成员或业务权限变化后按最新权限执行。</p></div>
       <div className="connector-actions"><button className="primary" disabled={busy||!selected} onClick={()=>void submit('allow')}>{busy?'正在处理…':'同意并连接'}</button><button disabled={busy} onClick={()=>void submit('deny')}>取消连接</button></div>
     </>}
   </Frame>;

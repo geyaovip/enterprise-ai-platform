@@ -6,7 +6,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
 import { readBody } from '../platform/security';
-import { CONNECTOR_APPS, CONNECTOR_NAMES, DRAFT_PERMISSIONS, publicOrigin, resourceFor, resourceApp, redirectAllowed, oauthError, type ConnectorApp } from './connector-policy';
+import { appId, CONNECTOR_APPS, CONNECTOR_NAMES, canExecute, canPrepareDraft, canReadConnector, connectorScopes, publicOrigin, resourceFor, resourceApp, redirectAllowed, oauthError, type ConnectorApp } from './connector-policy';
 
 export const connectorHash=(s:string)=>createHash('sha256').update(s).digest('hex');
 const secret=()=>randomBytes(32).toString('base64url');
@@ -18,8 +18,8 @@ type Tx=Prisma.TransactionClient;
 export class ConnectorAuthService {
   constructor(readonly db:PrismaService,readonly auth:AuthService){}
 
-  metadata(){const issuer=publicOrigin();return {issuer,authorization_endpoint:issuer+'/api/v1/oauth/authorize',token_endpoint:issuer+'/api/v1/oauth/token',registration_endpoint:issuer+'/api/v1/oauth/register',revocation_endpoint:issuer+'/api/v1/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none'],scopes_supported:CONNECTOR_APPS.flatMap(app=>[app+'.read',app+'.draft']),authorization_response_iss_parameter_supported:true};}
-  protectedMetadata(app:ConnectorApp){return {resource:resourceFor(app),resource_name:CONNECTOR_NAMES[app],authorization_servers:[publicOrigin()],scopes_supported:[app+'.read',app+'.draft'],bearer_methods_supported:['header']};}
+  metadata(){const issuer=publicOrigin();return {issuer,authorization_endpoint:issuer+'/api/v1/oauth/authorize',token_endpoint:issuer+'/api/v1/oauth/token',registration_endpoint:issuer+'/api/v1/oauth/register',revocation_endpoint:issuer+'/api/v1/oauth/revoke',response_types_supported:['code'],grant_types_supported:['authorization_code','refresh_token'],code_challenge_methods_supported:['S256'],token_endpoint_auth_methods_supported:['none'],scopes_supported:CONNECTOR_APPS.flatMap(connectorScopes),authorization_response_iss_parameter_supported:true};}
+  protectedMetadata(app:ConnectorApp){return {resource:resourceFor(app),resource_name:CONNECTOR_NAMES[app],authorization_servers:[publicOrigin()],scopes_supported:connectorScopes(app),bearer_methods_supported:['header']};}
 
   async limit(req:Request,purpose:string,max:number,seconds=300){
     const window=Math.floor(Date.now()/(seconds*1000));
@@ -39,8 +39,8 @@ export class ConnectorAuthService {
     const p=readBody(z.object({client_id:z.uuid(),redirect_uri:z.string().max(500),response_type:z.literal('code'),code_challenge:z.string().regex(/^[A-Za-z0-9_-]{43}$/),code_challenge_method:z.literal('S256'),resource:z.string().max(500),scope:z.string().max(300).optional(),state:z.string().min(1).max(2048).optional()}),raw);
     const client=await this.db.connectorClient.findUnique({where:{id:p.client_id}});
     if(!client||!(client.redirectUris as string[]).includes(p.redirect_uri)||!redirectAllowed(p.redirect_uri))oauthError('invalid_request','客户端或回调地址不匹配');
-    const app=resourceApp(p.resource),scopes=scopeList(p.scope??app+'.read '+app+'.draft');
-    if(!scopes.length||!scopes.includes(app+'.read')||scopes.some(s=>![app+'.read',app+'.draft'].includes(s)))oauthError('invalid_scope','授权范围必须属于当前应用');
+    const app=resourceApp(p.resource),supported=connectorScopes(app),scopes=p.scope===undefined?supported:scopeList(p.scope);
+    if(!scopes.includes(app+'.read')||scopes.some(s=>!supported.includes(s)))oauthError('invalid_scope','授权范围必须属于当前应用');
     const row=await this.db.connectorAuthorization.create({data:{clientId:client.id,redirectUri:p.redirect_uri,appId:app,resource:p.resource,scopes,state:p.state,challenge:p.code_challenge,expiresAt:new Date(Date.now()+10*60000)}});
     return publicOrigin()+'/connect/authorize?request='+row.id;
   }
@@ -52,9 +52,9 @@ export class ConnectorAuthService {
   async consentDetails(req:Request,id:string){
     const user=await this.auth.user(req),row=await this.pending(id),app=row.appId as ConnectorApp;
     const memberships=await this.db.membership.findMany({where:{userId:user.id,active:true,tenant:{active:true}},include:{tenant:{select:{slug:true,name:true}}},take:100});
-    const tenants=[] as Array<{key:string;name:string;draftAllowed:boolean}>;
+    const tenants=[] as Array<{key:string;name:string;draftAllowed:boolean;executionAllowed:boolean}>;
     for(const m of memberships){
-      try{const ctx=await this.auth.context(req,m.tenant.slug,app);if(ctx.permissions.some(p=>p.startsWith(app+'.')&&p.endsWith('.read')))tenants.push({key:m.tenant.slug,name:m.tenant.name,draftAllowed:ctx.permissions.includes(DRAFT_PERMISSIONS[app])});}catch{}
+      try{const ctx=await this.auth.context(req,m.tenant.slug,app);if(canReadConnector(app,ctx.permissions))tenants.push({key:m.tenant.slug,name:m.tenant.name,draftAllowed:canPrepareDraft(app,ctx.permissions),executionAllowed:canExecute(app,ctx.permissions)});}catch{}
     }
     const nonce=secret();
     const changed=await this.db.connectorAuthorization.updateMany({where:{id,codeHash:null,deniedAt:null,expiresAt:{gt:new Date()}},data:{consentUserId:user.id,consentHash:connectorHash(nonce)}});
@@ -64,7 +64,7 @@ export class ConnectorAuthService {
   }
   async consent(req:Request,id:string,raw:unknown){
     const user=await this.auth.user(req);
-    const p=readBody(z.object({nonce:z.string().min(32).max(100),decision:z.enum(['allow','deny']),tenantKey:z.string().max(100).optional(),allowDraft:z.boolean().default(false)}).strict(),raw);
+    const p=readBody(z.object({nonce:z.string().min(32).max(100),decision:z.enum(['allow','deny']),tenantKey:z.string().max(100).optional(),allowDraft:z.boolean().default(false),allowExecution:z.boolean().default(false)}).strict(),raw);
     return this.db.$transaction(async tx=>{
       await tx.$queryRaw`SELECT id FROM "ConnectorAuthorization" WHERE id=${id} FOR UPDATE`;
       const row=await tx.connectorAuthorization.findUnique({where:{id}});
@@ -73,9 +73,10 @@ export class ConnectorAuthService {
       if(p.decision==='deny'){await tx.connectorAuthorization.update({where:{id},data:{deniedAt:new Date(),consentHash:null}});redirect.searchParams.set('error','access_denied');return {redirect:redirect.toString()};}
       if(!p.tenantKey)oauthError('invalid_request','请选择企业');
       const app=row.appId as ConnectorApp,ctx=await this.auth.context(req,p.tenantKey!,app);
-      if(!ctx.permissions.some(s=>s.startsWith(app+'.')&&s.endsWith('.read')))throw new ForbiddenException('当前岗位无可授权的业务读取权限');
-      if(p.allowDraft&&(!(row.scopes as string[]).includes(app+'.draft')||!ctx.permissions.includes(DRAFT_PERMISSIONS[app])))throw new ForbiddenException('当前岗位无草稿准备权限');
-      const scopes=[app+'.read',...(p.allowDraft?[app+'.draft']:[])];
+      if(!canReadConnector(app,ctx.permissions))throw new ForbiddenException('当前岗位无可授权的业务读取权限');
+      if(p.allowDraft&&(!(row.scopes as string[]).includes(app+'.draft')||!canPrepareDraft(app,ctx.permissions)))throw new ForbiddenException('当前岗位无草稿准备权限');
+      if(p.allowExecution&&(!(row.scopes as string[]).includes(app+'.execute')||!canExecute(app,ctx.permissions)))throw new ForbiddenException('当前岗位无付费任务提交权限');
+      const scopes=[app+'.read',...(p.allowDraft?[app+'.draft']:[]),...(p.allowExecution?[app+'.execute']:[])];
       const grant=await tx.connectorGrant.create({data:{clientId:row.clientId,userId:user.id,tenantId:ctx.tenantId,membershipId:ctx.membershipId,appId:app,resource:row.resource,scopes,expiresAt:new Date(Date.now()+30*86400000)}});
       const code=secret();await tx.connectorAuthorization.update({where:{id},data:{grantId:grant.id,codeHash:connectorHash(code),consentHash:null,expiresAt:new Date(Date.now()+5*60000)}});
       await tx.auditEvent.create({data:{tenantId:ctx.tenantId,userId:ctx.userId,membershipId:ctx.membershipId,appId:'platform',requestId:ctx.requestId,action:'platform.connector.authorize',resourceType:'ConnectorGrant',resourceId:grant.id,detail:{appId:app,scopes,clientId:row.clientId}}});
@@ -121,7 +122,12 @@ export class ConnectorAuthService {
   }
   async current(grant:any){
     if(!grant||grant.revokedAt||grant.expiresAt<=new Date())oauthError('invalid_token','连接授权已失效',401);
-    try{return await this.auth.taskContext({tenantId:grant.tenantId,userId:grant.userId,membershipId:grant.membershipId,appId:grant.appId,taskId:'mcp:'+randomUUID()});}
+    try{
+      const app=appId(grant.appId);
+      const ctx=await this.auth.taskContext({tenantId:grant.tenantId,userId:grant.userId,membershipId:grant.membershipId,appId:app,taskId:'mcp:'+randomUUID()});
+      if(!canReadConnector(app,ctx.permissions))oauthError('invalid_token','岗位读取权限已失效',401);
+      return ctx;
+    }
     catch{oauthError('invalid_token','企业、应用或成员授权已失效',401);}
   }
   async bearer(req:Request,app:ConnectorApp){

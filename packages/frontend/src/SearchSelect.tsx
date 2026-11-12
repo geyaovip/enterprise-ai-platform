@@ -1,6 +1,6 @@
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { ChevronDown, X } from 'lucide-react';
+import { Check, ChevronDown, X } from 'lucide-react';
 
 type Option = { value: string; label: string; disabled?: boolean };
 
@@ -69,7 +69,7 @@ export function SearchSelect({ label, labelHidden = false, value, selectedLabel,
     </div>
     {open && host && createPortal(<div ref={popup} className="search-select-popup" style={position} onKeyDown={event => { if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); input.current?.focus(); close(); } }}>
       <div id={`${id}-options`} role="listbox" aria-label={`${label}选项`} aria-busy={loading} className="search-select-options">
-        {!loading && options.map((option, i) => <div role="option" id={`${id}-option-${i}`} key={option.value} aria-selected={option.value === value} aria-disabled={option.disabled || undefined} data-index={i} data-active={i === index && !option.disabled} onPointerDown={event => event.preventDefault()} onPointerMove={() => { if (!option.disabled) setActive(i); }} onClick={() => choose(option)}>{option.label}</div>)}
+        {!loading && options.map((option, i) => <div role="option" id={`${id}-option-${i}`} key={option.value} aria-selected={option.value === value} aria-disabled={option.disabled || undefined} data-index={i} data-active={i === index && !option.disabled} onPointerDown={event => event.preventDefault()} onPointerMove={() => { if (!option.disabled) setActive(i); }} onClick={() => choose(option)}><span>{option.label}</span>{option.value === value && <Check size={15} aria-hidden="true"/>}</div>)}
       </div>
       {loading ? <div className="search-select-feedback" role="status">正在加载…</div> : error ? <div className="search-select-feedback" role="alert">{error}{onRetry && <button type="button" onClick={onRetry}>重试</button>}</div> : !options.length ? <div className="search-select-feedback" role="status">{hasMore?'当前批次无可选项':'无匹配结果'}</div> : null}
       {!loading && !error && hasMore && onMore && <button className="search-select-more" type="button" onPointerDown={event => event.preventDefault()} onClick={onMore}>加载更多</button>}

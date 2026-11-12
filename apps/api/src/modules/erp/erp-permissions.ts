@@ -7,7 +7,7 @@ export const ROLE_PERMISSIONS: Record<string, readonly string[]> = {
 };
 
 import type { PrismaService } from '../prisma.service';
-export async function erpPermissions(db: PrismaService, tenantId: string, role: string, membershipId: string) {
+export async function erpPermissions(db: Pick<PrismaService, 'erpBusinessSettings' | 'erpWorkflow'>, tenantId: string, role: string, membershipId: string) {
   const settings = await db.erpBusinessSettings.findUnique({where:{tenantId}});
   const config = (settings?.approvalConfig ?? {}) as Record<string, unknown>;
   const extra: string[] = [];

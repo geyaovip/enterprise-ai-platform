@@ -630,6 +630,9 @@ model ErpStockMovement {
   costEstimated     Boolean          @default(false)
 
   tradeAmount Decimal? @db.Decimal(18, 2)
+  trackingCode String?
+  trackingKind String?
+  @@index([tenantId, trackingCode])
   @@index([tenantId, documentId, productId])
   @@index([tenantId, productId, createdAt])
   grossAmount Decimal? @db.Decimal(18, 2)
@@ -2740,4 +2743,161 @@ model GeoOptimization {
   updatedAt DateTime @updatedAt
   @@index([tenantId,projectId,status])
   @@index([tenantId,assigneeMembershipId,status])
+}
+
+model ManufacturingItem {
+  tenantId   String
+  materialId String
+  productId  String
+  @@id([tenantId, materialId])
+  @@unique([tenantId, productId])
+}
+
+model ManufacturingOrder {
+  id           String   @id @default(uuid())
+  tenantId     String
+  number       String
+  customerId   String
+  productId    String
+  warehouseId  String
+  customerName String
+  productName  String
+  sku          String
+  createdBy    String
+  quantity     Int
+  salesStatus String @default("confirmed")
+  salesReviewNote String?
+  completedQty Int      @default(0)
+  shippedQty   Int      @default(0)
+  version      Int      @default(1)
+  bomId        String
+  bomRevision  Int
+  bomVersions  Json
+  dueDate      String?
+  createdAt    DateTime @default(now())
+  requirements ManufacturingRequirement[]
+  purchases    ManufacturingPurchase[]
+  plan ManufacturingPlan?
+  materialUses ManufacturingMaterialUse[]
+  @@unique([tenantId, number])
+  @@index([tenantId, createdAt])
+}
+
+model ManufacturingRequirement {
+  orderId    String
+  productId  String
+  sku        String
+  name       String
+  unit       String
+  quantity   Decimal @db.Decimal(18, 3)
+  issued     Decimal @default(0) @db.Decimal(18, 3)
+  consumed   Decimal @default(0) @db.Decimal(18, 3)
+  wipValue   Decimal @default(0) @db.Decimal(18, 2)
+  order      ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@id([orderId, productId])
+}
+
+model ManufacturingPurchase {
+  purchaseId String @id
+  orderId    String
+  order      ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  @@index([orderId])
+}
+
+model ManufacturingReceipt {
+  tenantId     String
+  membershipId String
+  requestKey   String
+  fingerprint  String
+  result       Json
+  createdAt    DateTime @default(now())
+  @@id([tenantId, membershipId, requestKey])
+}
+
+model ErpStockHold {
+  tenantId    String
+  warehouseId String
+  productId   String
+  orderId     String
+  quantity    Decimal @db.Decimal(18, 6)
+  @@id([tenantId, warehouseId, productId, orderId])
+  @@index([tenantId, orderId])
+}
+
+model ErpTrackedStock {
+  tenantId    String
+  warehouseId String
+  productId   String
+  code        String
+  kind        String
+  quantity    Decimal @db.Decimal(18, 6)
+  @@id([tenantId, warehouseId, productId, code])
+  @@index([tenantId, code])
+}
+
+model ManufacturingPlan {
+  id          String @id @default(uuid())
+  orderId     String @unique
+  order       ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  startDate   String
+  dueDate     String
+  status      String @default("draft")
+  version     Int    @default(1)
+  jobs        ManufacturingJob[]
+}
+
+model ManufacturingJob {
+  id          String @id @default(uuid())
+  planId      String
+  plan        ManufacturingPlan @relation(fields: [planId], references: [id], onDelete: Cascade)
+  assigneeId  String
+  quantity    Int
+  label       String
+  createdAt   DateTime @default(now())
+  reports     ManufacturingReport[]
+  @@index([planId])
+}
+
+model ManufacturingReport {
+  id          String @id @default(uuid())
+  jobId       String
+  job         ManufacturingJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  reporterId  String
+  reviewerId  String?
+  good        Int
+  defective   Int
+  status      String @default("pending")
+  note        String?
+  reviewNote  String?
+  createdAt   DateTime @default(now())
+  reviewedAt  DateTime?
+  @@index([jobId, createdAt])
+}
+
+model ManufacturingMaterialUse {
+  id         String @id @default(uuid())
+  orderId    String
+  order      ManufacturingOrder @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  documentId String
+  productId  String
+  code       String?
+  kind       String?
+  quantity   Decimal @db.Decimal(18, 3)
+  @@index([orderId, productId])
+  @@index([documentId])
+}
+
+model ManufacturingMemberGrant {
+  tenantId     String
+  membershipId String
+  role         String
+  @@id([tenantId, membershipId])
+}
+
+model ManufacturingWarehousePurchase {
+  purchaseId  String @id
+  tenantId    String
+  warehouseId String
+  createdAt   DateTime @default(now())
+  @@index([tenantId, warehouseId, createdAt])
 }

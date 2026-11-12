@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { RecordActions, ChoiceSelect } from '../components';
 import { EntitySelect } from '../components';
 import { usePagedData } from '../hooks';
@@ -190,7 +191,7 @@ export function CrmEditor({
                     onChange={(e) => set(f.key, e.target.value)}
                   />
                 ) : f.type === "select" || f.type === "multi" ? (
-                  <select
+                  <DropdownSelect
                     multiple={f.type === "multi"}
                     value={values[f.key] ?? (f.type === "multi" ? [] : "")}
                     required={f.required}
@@ -209,7 +210,7 @@ export function CrmEditor({
                         {o.name}
                       </option>
                     ))}
-                  </select>
+                  </DropdownSelect>
                 ) : f.type === "checkbox" ? (
                   <input
                     type="checkbox"
@@ -577,7 +578,7 @@ export function CrmLeads() {
           placeholder="线索名称"
           onChange={(e) => setQ(e.target.value)}
         />
-        <select
+        <DropdownSelect
           aria-label="线索状态"
           value={params.get("status") ?? ""}
           onChange={(e) => setParams({ status: e.target.value, q, page: "1" })}
@@ -598,7 +599,7 @@ export function CrmLeads() {
               {salesLabels[s]}
             </option>
           ))}
-        </select>
+        </DropdownSelect>
         <button>查询</button>
       </form>
       <Result {...d}>
@@ -1420,7 +1421,7 @@ export function CrmOpportunities() {
           onChange={(e) => setQ(e.target.value)}
           placeholder="商机名称"
         />
-        <select
+        <DropdownSelect
           aria-label="销售阶段"
           value={params.get("stage") ?? ""}
           onChange={(e) => {
@@ -1436,7 +1437,7 @@ export function CrmOpportunities() {
               {salesLabels[s]}
             </option>
           ))}
-        </select>
+        </DropdownSelect>
         <button>查询</button>
       </form>
       <Result {...d}>

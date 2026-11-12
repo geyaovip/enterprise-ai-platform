@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/streamableHttp.js';
 import { ConnectorAuthService } from './connector-auth.service';
 import { ConnectorBusinessService } from './connector-business.service';
-import { appId, publicOrigin, resourceApp } from './connector-policy';
+import { appId, connectorScopes, publicOrigin, resourceApp } from './connector-policy';
 
 @Controller()
 export class ConnectorController {
@@ -37,7 +37,7 @@ export class ConnectorController {
     try{actor=await this.access.bearer(req,app);}
     catch(e){
       const status=e instanceof HttpException?e.getStatus():500;
-      if(status===401)res.set('WWW-Authenticate',`Bearer resource_metadata="${publicOrigin()}/.well-known/oauth-protected-resource/api/v1/mcp/${app}", scope="${app}.read ${app}.draft"`);
+      if(status===401)res.set('WWW-Authenticate',`Bearer resource_metadata="${publicOrigin()}/.well-known/oauth-protected-resource/api/v1/mcp/${app}", scope="${connectorScopes(app).join(' ')}"`);
       return res.status(status).json({error:status===401?'invalid_token':status===429?'rate_limited':'server_error',error_description:status===401?'请连接并授权当前应用':status===429?'请求过于频繁':'服务暂不可用'});
     }
     if(req.method!=='POST')return res.status(405).set('Allow','POST').json({jsonrpc:'2.0',id:null,error:{code:-32000,message:'Stateless endpoint accepts POST only'}});

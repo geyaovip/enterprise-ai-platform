@@ -30,11 +30,13 @@ import {
   XIcon,
   CheckIcon,
   DotsThreeIcon,
+  FilmSlateIcon,
+  CubeIcon,
 } from "@phosphor-icons/react";
 import { api, ApiError, errorText } from "../api";
 import { useApiData } from "../hooks";
 import { Dialog, Notice, ConfirmDialog, PageTitle } from "../components";
-import { InfoTip } from "@suite/frontend/components";
+import { DropdownSelect, InfoTip } from "@suite/frontend/components";
 import {
   useContent,
   useAction,
@@ -44,6 +46,7 @@ import {
   status,
 } from "./content-ui";
 import { ArtworkPreview } from "./ArtworkPreview";
+import { StudioDropdown } from "./StudioDropdown";
 import {
   ReferenceAttachment,
   type ReferenceImage,
@@ -52,6 +55,11 @@ import "./studio.css";
 
 type Size = "square" | "portrait" | "story";
 const ratios = { square: "1:1", portrait: "3:4", story: "9:16" };
+const creationTypes = [
+  { value: "image", label: "图片生成", icon: ImageIcon },
+  { value: "video", label: "视频生成", icon: FilmSlateIcon },
+  { value: "assistant", label: "创作助手", icon: SparkleIcon },
+] as const;
 const examples = [
   {
     title: "新品社媒图",
@@ -155,7 +163,7 @@ export function ContentExplore() {
             </button>
           ))}
         </div>
-        <select
+        <DropdownSelect
           aria-label="模板用途"
           value={useCase}
           onChange={(event) => setUseCase(event.target.value)}
@@ -164,7 +172,7 @@ export function ContentExplore() {
           {["社媒推广", "电商上新", "品牌活动"].map((name) => (
             <option key={name}>{name}</option>
           ))}
-        </select>
+        </DropdownSelect>
         <input
           type="search"
           aria-label="搜索创作模板"
@@ -238,6 +246,11 @@ function StudioScreen({ id }: { id: string }) {
   const modelReady = imageMode
     ? c.meta.model.configured
     : c.meta.model.videoConfigured;
+  const modelName: string = (imageMode ? c.meta.model.image : c.meta.model.video) ?? "";
+  const modelSummary = modelName
+    .replace(/^doubao-seedance-1-0-pro-fast(?:-\d+)?$/, "Seedance 1.0 Pro Fast")
+    .replace(/^doubao-seedream-4-5(?:-\d+)?$/, "Seedream 4.5") || "企业模型";
+  const modelDescription = modelReady ? modelName : "尚未配置";
   const maxReferences = c.meta.model.imageOptions.maxReferences;
   const [attachOpen, setAttachOpen] = useState(false);
   const [skillsOpen, setSkillsOpen] = useState(false);
@@ -299,7 +312,18 @@ function StudioScreen({ id }: { id: string }) {
     b.items.some((i: any) => mediaActive.includes(i.status)),
   );
   const pending = action.busy || upload.busy;
+  const canAttach = canCreate && (!imageMode || references.length < maxReferences);
+  const inputReferences = imageMode ? references : video.frame ? [video.frame] : [];
+  const uploadLabel = imageMode ? "上传参考图" : video.frame ? "更换首帧" : "上传首帧";
   const patch = (v: Partial<Draft>) => setDraft((d) => ({ ...d, ...v }));
+  const changeMode = (value: MediaMode | "assistant") => {
+    if (value === "assistant") {
+      const back = c.prefix + (id ? "/projects/" + id : "");
+      nav(c.prefix + "/ai?returnTo=" + encodeURIComponent(back));
+      return;
+    }
+    patch({ mode: value });
+  };
   const patchVideo = (value: Partial<typeof video>) =>
     setDraft((d) => ({
       ...d,
@@ -308,21 +332,48 @@ function StudioScreen({ id }: { id: string }) {
         ...value,
       },
     }));
+  const mediaOptions = (
+    <MediaOptions
+      mode={mode}
+      preserveSize={imageMode && !!activeRegion}
+      picture={picture}
+      clip={video.options}
+      hasFrame={!!video.frame}
+      dropdown={!id}
+      disabled={pending}
+      onPicture={(value) => patch({ picture: value })}
+      onClip={(options) => patchVideo({ options })}
+    />
+  );
+  const brandToggle = (
+    <button
+      type="button"
+      className={"studio-context-toggle" + (draft.brandId || project.data?.brief.brandId ? " selected" : "")}
+      disabled={pending}
+      onClick={() => setShowContext((value) => !value)}
+      aria-expanded={showContext}
+      title={draft.brandName}
+    >
+      <TagIcon size={15} aria-hidden="true" />
+      <span>{draft.brandName ?? "关联品牌"}</span>
+    </button>
+  );
   const referenceFrom = (id: string, name: string): ReferenceImage => ({
     id,
     name,
     preview: "/api/v1" + c.base + "/assets/" + id + "/thumbnail",
   });
-  const attach = (image: ReferenceImage) => {
+  const attach = (...images: ReferenceImage[]) => {
     if (imageMode) {
-      if (references.some((r) => r.id === image.id)) return;
-      if (references.length >= maxReferences)
+      const newImages = images.filter((image) => !references.some((r) => r.id === image.id));
+      if (!newImages.length) return;
+      if (references.length + newImages.length > maxReferences)
         throw Error("当前模型的参考图已达到上限");
-      const [reference, ...extraReferences] = [...references, image];
+      const [reference, ...extraReferences] = [...references, ...newImages];
       patch({ reference, extraReferences, region: undefined });
     } else {
       patchVideo({
-        frame: image,
+        frame: images[0],
         options: { ...video.options, ratio: "adaptive" },
       });
     }
@@ -517,24 +568,41 @@ function StudioScreen({ id }: { id: string }) {
       }
     });
   };
-  const attachFile = (file: File) =>
+  const attachFiles = (files: File[]) =>
     void upload.run(async () => {
-      if (!/^image\/(png|jpeg|webp)$/.test(file.type))
-        throw Error("支持 PNG、JPEG、WebP 图片");
-      if (file.size > 8 * 1024 * 1024) throw Error("图片最大 8 MiB");
-      const data = await new Promise<string>((resolve, reject) => {
-        const reader = new FileReader();
-        reader.onload = () => resolve(String(reader.result).split(",")[1]);
-        reader.onerror = () => reject(Error("图片读取失败"));
-        reader.readAsDataURL(file);
-      });
-      const asset = await api.post<any>(c.base + "/assets", {
-        filename: file.name,
-        data,
-        ...(id ? { projectId: id } : { draft: true }),
-      });
-      attach(referenceFrom(asset.id, file.name));
-      if (uploadInput.current) uploadInput.current.value = "";
+      if (pending || !canAttach || !files.length) return;
+      const remaining = imageMode ? maxReferences - references.length : 1;
+      if (files.length > remaining)
+        throw Error(`本次最多可选 ${remaining} 张图片`);
+      for (const file of files) {
+        if (!/^image\/(png|jpeg|webp)$/.test(file.type))
+          throw Error(`${file.name}：请使用 PNG、JPEG 或 WebP 图片`);
+        if (file.size > 8 * 1024 * 1024)
+          throw Error(`${file.name}：单张图片最大 8 MiB`);
+      }
+      const uploaded: ReferenceImage[] = [];
+      try {
+        for (const file of files) {
+          try {
+            const data = await new Promise<string>((resolve, reject) => {
+              const reader = new FileReader();
+              reader.onload = () => resolve(String(reader.result).split(",")[1]);
+              reader.onerror = () => reject(Error("图片读取失败"));
+              reader.readAsDataURL(file);
+            });
+            const asset = await api.post<{ id: string }>(c.base + "/assets", {
+              filename: file.name,
+              data,
+              ...(id ? { projectId: id } : { draft: true }),
+            });
+            uploaded.push(referenceFrom(asset.id, file.name));
+          } catch (error) {
+            throw Error(`${file.name}：${errorText(error)}`);
+          }
+        }
+      } finally {
+        if (uploaded.length) attach(...uploaded);
+      }
     });
   const useReference = (
     art: any,
@@ -960,29 +1028,54 @@ function StudioScreen({ id }: { id: string }) {
         )}
         <form className="studio-composer" onSubmit={submit}>
           <div className="studio-composer-input">
-            {(imageMode ? references : video.frame ? [video.frame] : []).map(
-              (image, index) => (
-                <ReferenceAttachment
-                  key={image.id}
-                  image={image}
+            <div className="studio-input-attachments">
+              <div className={"studio-input-references" + (inputReferences.length === 1 ? " is-single" : "")}>
+                {inputReferences.map((image, index) => (
+                  <ReferenceAttachment
+                    key={image.id}
+                    image={image}
+                    disabled={pending}
+                    label={imageMode ? "参考图" : "首帧"}
+                    onRemove={() => {
+                      if (!imageMode) {
+                        patchVideo({
+                          frame: undefined,
+                          options: { ...video.options, ratio: "16:9" },
+                        });
+                        return;
+                      }
+                      const [reference, ...extraReferences] = references.filter(
+                        (_, n) => n !== index,
+                      );
+                      patch({ reference, extraReferences, region: undefined });
+                    }}
+                  />
+                ))}
+                {canAttach && (
+                  <button
+                    type="button"
+                    className={"studio-local-upload" + (inputReferences.length ? " studio-local-upload-compact" : "")}
+                    aria-label={uploadLabel}
+                    title={uploadLabel}
+                    disabled={pending}
+                    onClick={() => uploadInput.current?.click()}
+                  >
+                    <PlusIcon size={inputReferences.length ? 17 : 25} aria-hidden="true" />
+                    {!inputReferences.length && <span>{uploadLabel}</span>}
+                  </button>
+                )}
+              </div>
+              {canAttach && (
+                <button
+                  type="button"
+                  className="studio-asset-picker"
                   disabled={pending}
-                  label={imageMode ? "参考图" : "首帧"}
-                  onRemove={() => {
-                    if (!imageMode) {
-                      patchVideo({
-                        frame: undefined,
-                        options: { ...video.options, ratio: "16:9" },
-                      });
-                      return;
-                    }
-                    const [reference, ...extraReferences] = references.filter(
-                      (_, n) => n !== index,
-                    );
-                    patch({ reference, extraReferences, region: undefined });
-                  }}
-                />
-              ),
-            )}
+                  onClick={() => setAttachOpen(true)}
+                >
+                  从素材库选
+                </button>
+              )}
+            </div>
             <textarea
               ref={input}
               aria-label="创作需求"
@@ -993,7 +1086,7 @@ function StudioScreen({ id }: { id: string }) {
                   ? references.length
                     ? "描述修改要求…"
                     : "描述画面，或添加参考图…"
-                  : "描述视频内容和镜头运动…"
+                  : "描述视频内容和镜头运动，也可上传首帧…"
               }
               value={prompt}
               onChange={(e) =>
@@ -1031,72 +1124,87 @@ function StudioScreen({ id }: { id: string }) {
               </button>
             </div>
           )}
-          <div className="studio-composer-tools">
-            <div className="studio-parameters">
-              <button
-                type="button"
-                className="studio-upload"
-                aria-label={imageMode ? "添加参考图" : "选择视频首帧"}
-                disabled={
-                  pending ||
-                  !canCreate ||
-                  (imageMode && references.length >= maxReferences)
-                }
-                onClick={() => setAttachOpen(true)}
-              >
-                <PlusIcon size={21} aria-hidden="true" />
-              </button>
-              <select
-                aria-label="创作类型"
-                value={mode}
-                disabled={pending}
-                onChange={(event) => {
-                  const value = event.target.value;
-                  if (value === "assistant") {
-                    const back = c.prefix + (id ? "/projects/" + id : "");
-                    nav(c.prefix + "/ai?returnTo=" + encodeURIComponent(back));
-                    return;
-                  }
-                  patch({ mode: value as MediaMode });
-                }}
-              >
-                <option value="image">图片生成</option>
-                <option value="video">视频生成</option>
-                {canGenerate && <option value="assistant">创作助手</option>}
-              </select>
-              <MediaOptions
-                mode={mode}
-                preserveSize={imageMode && !!activeRegion}
-                picture={picture}
-                clip={video.options}
-                hasFrame={!!video.frame}
-                disabled={pending}
-                onPicture={(value) => patch({ picture: value })}
-                onClip={(options) => patchVideo({ options })}
-              />
-              <button
-                type="button"
-                onClick={() => setSkillsOpen(true)}
-                disabled={pending || !canCreate}
-              >
-                提示词模板
-              </button>
-              <button
-                type="button"
-                className={
-                  "studio-context-toggle " +
-                  (draft.brandId || project.data?.brief.brandId
-                    ? "selected"
-                    : "")
-                }
-                disabled={pending}
-                onClick={() => setShowContext((v) => !v)}
-                aria-expanded={showContext}
-              >
-                <TagIcon size={16} aria-hidden="true" />
-                <span>{draft.brandName ?? "品牌"}</span>
-              </button>
-            </div>
+          <div className={id ? "studio-composer-tools" : "studio-composer-tools studio-home-toolbar"}>
+            {!id ? (
+              <div className="studio-parameters">
+                <StudioDropdown
+                  label="创作类型"
+                  summary={imageMode ? "图片生成" : "视频生成"}
+                  icon={imageMode
+                    ? <ImageIcon size={16} aria-hidden="true" />
+                    : <FilmSlateIcon size={16} aria-hidden="true" />}
+                  disabled={pending}
+                >
+                  {(close) => creationTypes
+                    .filter(({ value }) => value !== "assistant" || canGenerate)
+                    .map(({ value, label, icon: Icon }) => (
+                      <button
+                        key={value}
+                        type="button"
+                        className="studio-dropdown-row"
+                        aria-pressed={value === "assistant" ? undefined : mode === value}
+                        onClick={() => {
+                          close();
+                          changeMode(value);
+                        }}
+                      >
+                        <Icon size={17} aria-hidden="true" />
+                        <span>{label}</span>
+                        {mode === value && <CheckIcon size={16} aria-hidden="true" />}
+                      </button>
+                    ))}
+                </StudioDropdown>
+                <StudioDropdown
+                  label="企业模型"
+                  summary={modelReady ? modelSummary : "模型未配置"}
+                  icon={<CubeIcon size={16} aria-hidden="true" />}
+                  disabled={pending}
+                >
+                  {() => (
+                    <>
+                      <div className="studio-dropdown-row studio-model-detail">
+                        <CubeIcon size={18} aria-hidden="true" />
+                        <div>
+                          <strong>{modelSummary}</strong>
+                          <small>{modelDescription === modelSummary ? "当前企业模型" : modelDescription}</small>
+                        </div>
+                        {modelReady && <CheckIcon size={16} aria-hidden="true" />}
+                      </div>
+                      <p className="studio-model-note">参考图片会发送至企业配置的模型服务。</p>
+                      {c.isTenantAdmin && (
+                        <a className="studio-dropdown-row" href={c.adminUrl + "?tab=services#enterprise-models"}>
+                          管理模型
+                        </a>
+                      )}
+                    </>
+                  )}
+                </StudioDropdown>
+                {mediaOptions}
+                {brandToggle}
+              </div>
+            ) : (
+              <div className="studio-parameters">
+                <DropdownSelect
+                  aria-label="创作类型"
+                  value={mode}
+                  disabled={pending}
+                  onChange={(event) => changeMode(event.target.value as MediaMode | "assistant")}
+                >
+                  <option value="image">图片生成</option>
+                  <option value="video">视频生成</option>
+                  {canGenerate && <option value="assistant">创作助手</option>}
+                </DropdownSelect>
+                {mediaOptions}
+                <button
+                  type="button"
+                  onClick={() => setSkillsOpen(true)}
+                  disabled={pending || !canCreate}
+                >
+                  提示词模板
+                </button>
+                {brandToggle}
+              </div>
+            )}
             <button
               type="submit"
               className="studio-submit"
@@ -1139,7 +1247,7 @@ function StudioScreen({ id }: { id: string }) {
               </label>
               <label>
                 关联品牌
-                <select
+                <DropdownSelect
                   aria-label="关联品牌"
                   disabled={pending || brands.loading}
                   value={draft.brandId}
@@ -1172,7 +1280,7 @@ function StudioScreen({ id }: { id: string }) {
                         {b.name} · v{b.publishedVersion}
                       </option>
                     ))}
-                </select>
+                </DropdownSelect>
               </label>
               <Link to={c.prefix + "/brands"}>管理品牌资料</Link>
               <Pager result={brands} page={brandPage} setPage={setBrandPage} />
@@ -1193,11 +1301,12 @@ function StudioScreen({ id }: { id: string }) {
           aria-label="上传参考图片"
           type="file"
           accept="image/png,image/jpeg,image/webp"
-          disabled={pending}
+          multiple={imageMode && maxReferences - references.length > 1}
+          disabled={pending || !canAttach}
           onChange={(e) => {
-            const file = e.target.files?.[0];
-            if (file) attachFile(file);
+            const files = Array.from(e.currentTarget.files ?? []);
             e.currentTarget.value = "";
+            attachFiles(files);
           }}
         />
         {(upload.busy || !canGenerate || !modelReady) && (
@@ -1216,7 +1325,9 @@ function StudioScreen({ id }: { id: string }) {
         <section className="studio-examples" aria-label="创作灵感">
           <div className="studio-examples-heading">
             <h2>创作灵感</h2>
-            <Link to={c.prefix + "/explore"}>浏览提示词</Link>
+            <button type="button" disabled={pending || !canCreate} onClick={() => setSkillsOpen(true)}>
+              提示词模板
+            </button>
           </div>
           <div>
             {(mode === "video" ? videoExamples : examples).map((example) => (
@@ -1243,9 +1354,6 @@ function StudioScreen({ id }: { id: string }) {
         title={imageMode ? "添加参考图" : "选择视频首帧"}
         onClose={() => setAttachOpen(false)}
       >
-        <button type="button" onClick={() => uploadInput.current?.click()}>
-          上传本地图片
-        </button>
         <div className="canvas-asset-scopes">
           <button
             type="button"
@@ -1435,7 +1543,7 @@ function StudioScreen({ id }: { id: string }) {
               <small>{pictureReceipt(detail)}</small>
               {detail.versions[0].data.backgroundId && (
                 <Field label="对比图片">
-                  <select
+                  <DropdownSelect
                     value={compare}
                     onChange={(event) => setCompare(event.target.value)}
                   >
@@ -1463,7 +1571,7 @@ function StudioScreen({ id }: { id: string }) {
                           {art.name}
                         </option>
                       ))}
-                  </select>
+                  </DropdownSelect>
                 </Field>
               )}
               <div className="studio-detail-actions">

@@ -7,7 +7,7 @@ import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
 import type { RequestContext } from '../platform/context';
 import { readBody } from '../platform/security';
-import { audit, notifyApprovers, storedMoney, conflict, failNotFound, label, money, pageQuery, positiveQty } from './erp.common';
+import { type Transaction, audit, notifyApprovers, storedMoney, conflict, failNotFound, label, money, pageQuery, positiveQty } from './erp.common';
 import { accountStatus, checkApprover, qty, unitMoney } from './trade.common';
 import { stockMove, warehouse } from './stock-ledger';
 
@@ -80,7 +80,8 @@ export class CorrectionService {
      const original=sales?await tx.erpSalesLine.findFirst({where:{contractId:record.sourceId,productId:l.productId}}):await tx.erpPurchaseLine.findFirst({where:{orderId:record.sourceId,productId:l.productId}});if(!original)failNotFound('原单商品');
      l.amount=allocate(move.grossAmount??original.unitPrice.mul(move.quantity).toDecimalPlaces(2),'amount').toFixed(2);l.netAmount=allocate(move.tradeAmount??original.unitPrice.div(new Prisma.Decimal(1).plus(original.taxRate.div(100))).mul(move.quantity).toDecimalPlaces(2),'netAmount').toFixed(2);approvedAmount=approvedAmount.plus(l.amount);
      l.costAmount=cost.toFixed(2);
-     await stockMove(tx,ctx,{productId:l.productId,warehouseId:record.warehouseId,direction:sales?'in':'out',quantity:l.quantity,...(sales?{unitCost:new Prisma.Decimal(l.unitCost),costAmount:cost,costEstimated:l.costEstimated}:{}),tradeAmount:new Prisma.Decimal(l.netAmount),grossAmount:new Prisma.Decimal(l.amount),sourceType:sales?'sales_return':'purchase_return',sourceId:id,documentId:doc.id});
+     await stockMove(tx,ctx,{productId:l.productId,warehouseId:record.warehouseId,direction:sales?'in':'out',quantity:l.quantity,
+      tracking:move.trackingCode&&(move.trackingKind==='lot'||move.trackingKind==='serial')?{code:move.trackingCode,kind:move.trackingKind}:undefined,...(sales?{unitCost:new Prisma.Decimal(l.unitCost),costAmount:cost,costEstimated:l.costEstimated}:{}),tradeAmount:new Prisma.Decimal(l.netAmount),grossAmount:new Prisma.Decimal(l.amount),sourceType:sales?'sales_return':'purchase_return',sourceId:id,documentId:doc.id});
     }
     if(approvedAmount.gt(account.amount))conflict('退货金额超过原单当前交易金额');
     const next=account.amount.minus(approvedAmount);const status=accountStatus(next,account.paidAmount);
@@ -94,9 +95,10 @@ export class CorrectionService {
   },{isolationLevel:'Serializable'});
  }
  async closeOrder(ctx:RequestContext,kind:'sales'|'purchase',id:string,body:unknown){
+  return this.db.$transaction(tx => this.closeOrderInTransaction(tx, ctx, kind, id, body), { isolationLevel: 'Serializable' });
+ }
+ async closeOrderInTransaction(tx: Transaction, ctx: RequestContext, kind: 'sales' | 'purchase', id: string, body: unknown) {
   const input=readBody(z.object({version:z.int().positive(),reason:label(500)}),body);this.auth.require(ctx,kind==='sales'?'erp.sales.approve':'erp.purchase.approve');
-  return this.db.$transaction(async tx=>{
-   
    if(kind==='sales'){
     const order=await tx.erpSalesContract.findFirst({where:{id,tenantId:ctx.tenantId,version:input.version},include:{lines:true}});if(!order||['shipped','closed','cancelled'].includes(order.status))conflict('当前销售单不可取消/关闭');await checkApprover(tx,ctx,'sales',order.total);const status=order.lines.some(l=>l.shippedQty>0)?'closed':'cancelled';await tx.erpSalesContract.update({where:{id},data:{status,closeReason:input.reason,version:{increment:1}}});
    }else{
@@ -104,7 +106,6 @@ export class CorrectionService {
    }
    await this.workflows.reject(tx,ctx,kind,id,input.reason,true,true);
    await audit(tx,ctx,'erp.'+kind+'.close',kind==='sales'?'SalesContract':'PurchaseOrder',id,{reason:input.reason});return{ok:true};
-  },{isolationLevel:'Serializable'});
  }
  async changeSales(ctx:RequestContext,id:string,body:unknown){
   this.auth.require(ctx,'erp.sales.write');const input=readBody(z.object({version:z.int().positive(),reason:label(500),lines:z.array(z.object({lineId:z.uuid(),quantity:positiveQty})).min(1).max(100)}).refine(x=>new Set(x.lines.map(l=>l.lineId)).size===x.lines.length,'明细不能重复'),body);

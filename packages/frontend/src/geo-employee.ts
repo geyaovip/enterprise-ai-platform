@@ -1,5 +1,6 @@
 export const geoEmployee = {
   name: 'GEO 品牌分析官',
+  avatar: '/marketing/employee-geo.png',
   role: '品牌可见度分析',
   summary: '解读品牌分析报告，找出竞品出现而品牌缺席的问题，整理优化建议和复测条件。',
   tasks: ['解读品牌表现与样本限制', '核对竞品缺席问题和引用证据', '准备优化建议与复测条件'],

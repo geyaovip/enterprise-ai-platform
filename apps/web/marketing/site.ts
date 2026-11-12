@@ -5,7 +5,7 @@ import { scenarios } from './scenarios';
 import { examplePanel, type ExampleId } from './examples';
 export const publicPages = publicPaths;
 type Page = string;
-type Product = EmployeeProduct;
+type Product = EmployeeProduct | 'manufacturing';
 const products = {
   erp: {
     name:'ERP 进销存', label:'进销存与经营协作', cardTitle:'从订单到库存，业务有序流转。',
@@ -66,6 +66,16 @@ const products = {
       ['监测与优化复测','把证据转为优化任务，设置监测计划，沿用基线条件复测。'],
     ],
   },
+  manufacturing: {
+    name:'制造业进销存',
+    brief:'面向按单生产的装配团队，连接接单、采购、仓储、生产与发货。',
+    features:[
+      ['接单与缺料采购','按 BOM 版本核对可用库存与在途采购，把待补物料带入采购草稿。'],
+      ['多仓库存与锁库','办理调拨和盘点，按仓库为订单锁定库存，按安全库存生成补货建议。'],
+      ['计划、派工与报工','发布生产计划，分批报工并审核。按合格量和实际领料校验成品入库。'],
+      ['批次与序列号追溯','扫码查在库位置、出入库单据以及成品与原料的耗用关系。'],
+    ],
+  },
 } as const;
 
 const ids=Object.keys(products) as Product[];
@@ -82,6 +92,7 @@ const productIllustrations:Record<Product,string>={
   mes:'拆解零件与待核对的物料清单渲染示意',
   content:'同一产品在两种光线下的创作效果渲染示意',
   geo:'从模型回答中查找品牌提及和引用的渲染示意',
+  manufacturing:'沿制造流程排列的原料箱、装配工位和带条码的成品箱',
 };
 const productArt=(id:Product)=>'/marketing/platform-'+id+'-render.webp';
 const productImage=(id:Product)=>`<img class="interface-image" src="${productArt(id)}" width="1200" height="800" alt="${productIllustrations[id]}" loading="lazy" decoding="async">`;
@@ -89,8 +100,8 @@ const productPreview=(id:Product)=>`<button type="button" class="interface-previ
 const metadata:Record<string,{title:string;description:string}>={
  '/':{title:'知行方舟｜企业AI应用与数字员工',description:'连接库存、客户、生产、品牌内容创作和 AI 品牌可见度监测，按企业权限使用业务应用、数字员工和企业知识。'},
  '/employees':{title:'数字员工｜ERP、CRM、MES、品牌内容与 GEO · 知行方舟',description:'了解 ERP 管家、CRM 运营官、MES 生产官、品牌内容创作官与 GEO 品牌分析官的职责和协作场景。'},
- '/solutions':{title:'工作场景｜库存、客户、生产与品牌运营 · 知行方舟',description:'查看库存、客户、生产、品牌内容创作与 AI 品牌可见度分析的准备资料、处理步骤与交付结果。'},
- '/products':{title:'业务应用｜ERP、CRM、MES、品牌内容与 GEO · 知行方舟',description:'了解 ERP、CRM、MES、品牌内容与 GEO 品牌可见度，按企业需要选择和开通业务应用。'},
+ '/solutions':{title:'工作场景｜库存、客户、制造交付与品牌运营 · 知行方舟',description:'查看库存、客户、生产、品牌内容创作与 AI 品牌可见度分析的准备资料、处理步骤与交付结果。'},
+ '/products':{title:'业务应用｜制造业进销存、ERP、CRM、MES 与品牌应用 · 知行方舟',description:'了解制造业进销存、ERP、CRM、MES、品牌内容和 GEO，按企业需要选择业务应用。'},
  '/knowledge':{title:'企业知识｜资料查询与原文回查 · 知行方舟',description:'按企业及成员权限查询知识资料，保留原文引用，结合业务记录核对结果。'},
  '/contact':{title:'联系与落地｜知行方舟',description:'从直接使用、现有流程扩展或专属构建开始，围绕业务样例、当前流程和期望结果沟通需求。'},
 };
@@ -102,11 +113,12 @@ function pageIntro(path:string,title:string){return `<section class="site-shell 
 const flowImages=['sources','organize','confirm','receipt'];
 function workflow(steps:ReadonlyArray<readonly string[]>){return `<ol class="visual-workflow">${steps.map(([t,d],i)=>`<li><div class="flow-art">${visual('render-flow-'+flowImages[i],'', 'flow-image')}</div><h3>${t}</h3><p>${d}</p>${i<3?`<span class="flow-arrow">${arrow}</span>`:''}</li>`).join('')}</ol>`;}
 function contactPanel(){return `<section class="contact-panel" aria-labelledby="contact-panel-title"><div class="contact-panel-copy"><h2 id="contact-panel-title">联系咨询</h2><ul class="contact-preparation"><li>业务样例</li><li>当前流程与卡点</li><li>期望交付结果</li></ul></div><div class="contact-panel-action"><p class="contact-email">geyaovip@163.com</p>${link('mailto:geyaovip@163.com','邮件联系',true)}</div></section>`;}
-function delivery(){return `<section class="section delivery-section" id="delivery"><div class="site-shell">${heading('选择适合的落地方式')}<div class="delivery-grid">${[['01','直接使用','选择 ERP、CRM、MES、品牌内容或 GEO。','/products','选择业务应用'],['02','扩展应用','围绕现有流程，核对需要补充的规则、数据和系统接口。','#contact-panel-title','沟通扩展需求'],['03','专属构建','明确新的工作任务、输入资料和交付物，再评估专属应用。','#contact-panel-title','沟通业务需求']].map(([n,t,d,href,label])=>`<article><span class="step-number">${n}</span><h3>${t}</h3><p>${d}</p>${textLink(href,label)}</article>`).join('')}</div></div></section>`;}
+function delivery(){return `<section class="section delivery-section" id="delivery"><div class="site-shell">${heading('选择适合的落地方式')}<div class="delivery-grid">${[['01','直接使用','选择制造业进销存、ERP、CRM、MES 或品牌应用。','/products','选择业务应用'],['02','扩展应用','围绕现有流程，核对需要补充的规则、数据和系统接口。','#contact-panel-title','沟通扩展需求'],['03','专属构建','明确新的工作任务、输入资料和交付物，再评估专属应用。','#contact-panel-title','沟通业务需求']].map(([n,t,d,href,label])=>`<article><span class="step-number">${n}</span><h3>${t}</h3><p>${d}</p>${textLink(href,label)}</article>`).join('')}</div></div></section>`;}
 const homeApplications = {
   erp:{title:'知道该补多少货', scenario:'replenishment', action:'查看库存补货场景'},
   crm:{title:'找出这周该回访的客户', scenario:'customer-operations', action:'查看客户回访场景'},
   mes:{title:'在投产前核清物料', scenario:'bom-review', action:'查看 BOM 核查场景'},
+  manufacturing:{title:'把制造订单从接单做到发货', scenario:'manufacturing-fulfillment', action:'查看制造履约场景'},
   geo:{title:'看品牌在 AI 回答里怎么被提及', scenario:'brand-visibility', action:'查看品牌分析场景'},
   content:{title:'把产品素材变成宣传图', scenario:'brand-content', action:'查看品牌内容场景'},
 } as const;
@@ -149,7 +161,7 @@ function home(){
   <section class="section platform-applications" aria-labelledby="work-title"><div class="site-shell" id="work">
     <div class="section-heading-row"><h2 id="work-title">从你要完成的工作开始</h2>${textLink('/products','全部业务应用')}</div>
     <section class="application-group" aria-labelledby="operation-title"><h3 id="operation-title">经营协作</h3><div class="application-pair">${applicationFeature('erp')}${applicationFeature('crm')}</div></section>
-    <section class="application-group" aria-labelledby="production-title"><h3 id="production-title">生产准备与执行</h3>${applicationFeature('mes')}</section>
+    <section class="application-group" aria-labelledby="production-title"><h3 id="production-title">生产准备与执行</h3><div class="application-pair">${applicationFeature('manufacturing')}${applicationFeature('mes')}</div></section>
     <section class="application-group" aria-labelledby="brand-title"><h3 id="brand-title">品牌运营</h3><div class="application-pair">${applicationFeature('geo')}${applicationFeature('content')}</div></section>
   </div></section>
   <section class="section platform-flow" aria-labelledby="flow-title"><div class="site-shell">
@@ -237,7 +249,39 @@ function geoScenario() {
     <div class="inline-action">${link('/products#geo','查看 GEO 应用',true)}</div>`;
 }
 
+const manufacturingWork = {
+  id:'manufacturing-fulfillment',
+  name:'制造订单交付',
+  inputs:['客户订单与交付日期', '成品 BOM、仓库库存和在途采购'],
+  steps:[
+    ['核对缺料','按订单 BOM 和作业仓库查看实存、锁定和可用量。'],
+    ['补货与领料','采购处理缺料，仓库按实收和实际领用记录出入库。'],
+    ['完工与发货','审核报工，分批办理合格品入库和发货。'],
+  ],
+  outputs:['订单、采购和库存单据', '已入库与已发货数量', '批次和序列号的流转记录'],
+  confirmation:'采购审核、报工审核与实际出入库由相应岗位办理。',
+} as const;
+function manufacturingExample(){
+  return `<section class="inline-example" id="manufacturing-example"><h3>协作示例</h3>
+    <p>装配团队接到 10 件控制模块订单。计划员按 BOM 核对待补物料，采购分批收货，仓库记录领料和成品入库，销售据实跟进两批发货。</p>
+    <p class="example-note">虚构订单，数量用于说明流程。</p></section>`;
+}
+function manufacturingPanel(){
+  const product=products.manufacturing;
+  return `<div class="section-profile"><div><h2>${product.name}</h2><p class="profile-summary">${product.brief}</p>
+    <p class="audience">销售 · 采购 · 仓库 · 车间</p>
+    <div class="hero-actions">${link('/contact','申请开通',true)}${link('/solutions#manufacturing-fulfillment','查看交付流程')}</div>
+    </div>${productPreview('manufacturing')}</div>
+    <section class="inline-capabilities"><h3>业务功能</h3><div class="capability-grid">${product.features.map(([title,detail])=>`<article><h4>${title}</h4><p>${detail}</p></article>`).join('')}</div></section>
+    ${manufacturingExample()}
+    <section class="inline-example"><h3>WorkBuddy 制造进销存专家</h3>
+      <p>连接授权企业后，可查询订单履约、缺料、生产进度和批次流向。业务操作由相应岗位在工作台办理。</p></section>`;
+}
+
 function solutionPanel(id:string){
+  if(id===manufacturingWork.id)return `<header class="inline-solution-heading"><h2>${manufacturingWork.name}</h2></header>
+    ${workContent(manufacturingWork)}${manufacturingExample()}
+    <div class="inline-action">${link('/products#manufacturing','查看制造业进销存',true)}</div>`;
   if(id===geoWork.id)return geoScenario();
   if(id==='brand-content')return contentScenario();
   const job=employeeJobs.find(j=>j.id===id)!;
@@ -248,8 +292,8 @@ function solutionPanel(id:string){
     <div class="inline-action">${link('/products#'+job.employee,'查看 '+products[job.employee].name,true)}</div>`;
 }
 
-function jobsDirectory(){return `${sectionTabs('solutions','选择工作场景',[...employeeJobs.map(j=>({id:j.id,name:j.id==='brand-content'?'品牌创作':j.name})),{id:geoWork.id,name:'品牌可见度'}],solutionPanel)}`;}
-function productPanel(id:Product){if(id==='geo')return geoPanel();if(id==='content')return brandContentPanel();const p=products[id];return `<div class="section-profile"><div><h2>${p.name}</h2><p class="profile-summary">${p.description}</p><p class="audience">${p.audience}</p><div class="hero-actions">${link('/login','前往工作台',true)}${link('#'+id+'-example','看协作示例')}</div></div>${productPreview(id)}</div><section class="inline-capabilities"><h3>业务功能</h3><div class="capability-grid">${p.features.map(([t,d])=>`<article><h4>${t}</h4><p>${d}</p></article>`).join('')}</div></section><section class="inline-workflow"><h3>业务如何衔接</h3>${workflow(p.steps).replaceAll('<h3>','<h4>').replaceAll('</h3>','</h4>')}</section>${embeddedExample(id,'product-'+id)}`;}
+function jobsDirectory(){return `${sectionTabs('solutions','选择工作场景',[...employeeJobs.map(j=>({id:j.id,name:j.id==='brand-content'?'品牌创作':j.name})),{id:geoWork.id,name:'品牌可见度'},{id:manufacturingWork.id,name:manufacturingWork.name}],solutionPanel)}`;}
+function productPanel(id:Product){if(id==='manufacturing')return manufacturingPanel();if(id==='geo')return geoPanel();if(id==='content')return brandContentPanel();const p=products[id];return `<div class="section-profile"><div><h2>${p.name}</h2><p class="profile-summary">${p.description}</p><p class="audience">${p.audience}</p><div class="hero-actions">${link('/login','前往工作台',true)}${link('#'+id+'-example','看协作示例')}</div></div>${productPreview(id)}</div><section class="inline-capabilities"><h3>业务功能</h3><div class="capability-grid">${p.features.map(([t,d])=>`<article><h4>${t}</h4><p>${d}</p></article>`).join('')}</div></section><section class="inline-workflow"><h3>业务如何衔接</h3>${workflow(p.steps).replaceAll('<h3>','<h4>').replaceAll('</h3>','</h4>')}</section>${embeddedExample(id,'product-'+id)}`;}
 function productCatalog(){return `${pageIntro('/products','业务应用')}${sectionTabs('products','选择业务应用',ids.map(id=>({id,name:products[id].name})),id=>productPanel(id as Product))}`;}
 function knowledgePage(){const k=scenarios.find(s=>s.id==='knowledge')!;return `${pageIntro('/knowledge','企业知识')}<section class="section directory-section"><div class="site-shell solution-layout"><div class="solution-main"><section class="solution-inputs"><h2>准备哪些资料</h2><ul>${k.inputs.map(x=>`<li>${x}</li>`).join('')}</ul></section><section class="solution-process"><h2>怎么查询</h2><ol>${k.steps.map(([t,d])=>`<li><h3>${t}</h3><p>${d}</p></li>`).join('')}</ol></section></div><aside class="solution-result"><h2>查询结果</h2><ul>${k.outputs.map(x=>`<li>${x}</li>`).join('')}</ul><div class="confirmation-block"><h3>访问与核对</h3><p>${k.confirmation}</p></div>${link('/login','前往工作台',true)}</aside></div></section>`;}
 function contactPage(){return `${pageIntro('/contact','联系与落地')}<section class="section directory-section"><div class="site-shell">${contactPanel()}</div></section>${delivery()}`;}
@@ -258,7 +302,7 @@ function structuredData(path:string,origin:string,image:string){
  const url=origin+path,org=origin+'/#organization',website=origin+'/#website';
  const graph:Record<string,unknown>[]=[{'@type':'Organization','@id':org,name:'知行方舟',url:origin+'/',email:'geyaovip@163.com',logo:{'@type':'ImageObject',url:origin+'/brand/ark.svg',width:48,height:48}},{'@type':'WebSite','@id':website,url:origin+'/',name:'知行方舟',inLanguage:'zh-CN',publisher:{'@id':org}},{'@type':['/employees','/solutions','/products'].includes(path)?'CollectionPage':'WebPage','@id':url+'#webpage',url,name:metadata[path].title,description:metadata[path].description,inLanguage:'zh-CN',isPartOf:{'@id':website},publisher:{'@id':org},primaryImageOfPage:{'@type':'ImageObject',url:image},...(path!=='/'?{breadcrumb:{'@id':url+'#breadcrumb'}}:{}),...(path==='/products'?{mainEntity:ids.map(id=>({'@id':url+'#application-'+id}))}:{})}];
  if(path!=='/')graph.push({'@type':'BreadcrumbList','@id':url+'#breadcrumb',itemListElement:crumbs(path).map((c,i)=>({'@type':'ListItem',position:i+1,name:c.name,item:origin+c.item}))});
- const items=path==='/products'?ids.map(id=>({name:products[id].name,url:origin+'/products#'+id})):path==='/employees'?employeeIds.map(id=>({name:employees[id].name,url:origin+employeeHref(id)})):path==='/solutions'?[...employeeJobs.map(j=>({name:j.name,url:origin+jobHref(j)})),{name:geoWork.name,url:origin+'/solutions#'+geoWork.id}]:null;
+ const items=path==='/products'?ids.map(id=>({name:products[id].name,url:origin+'/products#'+id})):path==='/employees'?employeeIds.map(id=>({name:employees[id].name,url:origin+employeeHref(id)})):path==='/solutions'?[...employeeJobs.map(j=>({name:j.name,url:origin+jobHref(j)})),{name:geoWork.name,url:origin+'/solutions#'+geoWork.id},{name:manufacturingWork.name,url:origin+'/solutions#'+manufacturingWork.id}]:null;
  if(items)graph.push({'@type':'ItemList','@id':url+'#directory',itemListElement:items.map((item,i)=>({'@type':'ListItem',position:i+1,...item}))});
  if(path==='/products')for(const id of ids){const p=products[id];graph.push({'@type':'SoftwareApplication','@id':url+'#application-'+id,name:p.name,url:url+'#'+id,description:p.brief,applicationCategory:'BusinessApplication',operatingSystem:'Web',inLanguage:'zh-CN',publisher:{'@id':org},image:origin+productArt(id),featureList:p.features.map(f=>f[0])});}
  return JSON.stringify({'@context':'https://schema.org','@graph':graph}).replace(/</g,'\\u003c');
@@ -268,6 +312,6 @@ export function marketingPage(path:Page){
  const m=metadata[path],origin=new URL(process.env.PUBLIC_SITE_ORIGIN??'https://zhixingark.cn').origin;
  const share={image:'platform-ark-render',width:1536,height:1024,imageAlt:'知行方舟企业 AI 应用平台概念渲染'};
  const shareImage=new URL('/marketing/'+share.image+'.webp',origin).href;
- return `<!doctype html><html lang="zh-CN" data-page="marketing"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#6554D9"><meta name="robots" content="index,follow,max-image-preview:large"><title>${m.title}</title><meta name="description" content="${m.description}"><meta property="og:type" content="website"><meta property="og:locale" content="zh_CN"><meta property="og:site_name" content="知行方舟"><meta property="og:title" content="${m.title}"><meta property="og:description" content="${m.description}"><meta property="og:image" content="${shareImage}"><meta property="og:image:type" content="image/webp"><meta property="og:image:width" content="${share.width}"><meta property="og:image:height" content="${share.height}"><meta property="og:image:alt" content="${share.imageAlt}"><link rel="canonical" href="${origin+path}"><meta property="og:url" content="${origin+path}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${m.title}"><meta name="twitter:description" content="${m.description}"><meta name="twitter:image" content="${shareImage}"><meta name="twitter:image:alt" content="${share.imageAlt}"><link rel="icon" href="/brand/ark.svg" type="image/svg+xml"><link rel="stylesheet" href="/site.css?v=20261107-geo-employee-r1"><script id="legacy-routes" type="application/json">${JSON.stringify(legacyHashRoutes[path]??{})}</script><script src="/site.js?v=20261107-geo-employee-r1" defer></script><script type="application/ld+json">${structuredData(path,origin,shareImage)}</script></head><body class="marketing">${header(path)}<main id="main-content">${pageBody(path)}</main>${footer()}<dialog class="interface-dialog" aria-labelledby="interface-dialog-title"><div class="interface-dialog-header"><h2 id="interface-dialog-title">产品示意图</h2><button type="button" class="interface-dialog-close" aria-label="关闭大图"><img src="/marketing/close.svg" width="24" height="24" alt=""></button></div><img class="interface-dialog-image" width="1200" height="800" alt=""></dialog></body></html>`;
+ return `<!doctype html><html lang="zh-CN" data-page="marketing"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="theme-color" content="#6554D9"><meta name="robots" content="index,follow,max-image-preview:large"><title>${m.title}</title><meta name="description" content="${m.description}"><meta property="og:type" content="website"><meta property="og:locale" content="zh_CN"><meta property="og:site_name" content="知行方舟"><meta property="og:title" content="${m.title}"><meta property="og:description" content="${m.description}"><meta property="og:image" content="${shareImage}"><meta property="og:image:type" content="image/webp"><meta property="og:image:width" content="${share.width}"><meta property="og:image:height" content="${share.height}"><meta property="og:image:alt" content="${share.imageAlt}"><link rel="canonical" href="${origin+path}"><meta property="og:url" content="${origin+path}"><meta name="twitter:card" content="summary_large_image"><meta name="twitter:title" content="${m.title}"><meta name="twitter:description" content="${m.description}"><meta name="twitter:image" content="${shareImage}"><meta name="twitter:image:alt" content="${share.imageAlt}"><link rel="icon" href="/brand/ark.svg" type="image/svg+xml"><link rel="stylesheet" href="/site.css?v=20261110-manufacturing-r1"><script id="legacy-routes" type="application/json">${JSON.stringify(legacyHashRoutes[path]??{})}</script><script src="/site.js?v=20261110-manufacturing-r1" defer></script><script type="application/ld+json">${structuredData(path,origin,shareImage)}</script></head><body class="marketing">${header(path)}<main id="main-content">${pageBody(path)}</main>${footer()}<dialog class="interface-dialog" aria-labelledby="interface-dialog-title"><div class="interface-dialog-header"><h2 id="interface-dialog-title">产品示意图</h2><button type="button" class="interface-dialog-close" aria-label="关闭大图"><img src="/marketing/close.svg" width="24" height="24" alt=""></button></div><img class="interface-dialog-image" width="1200" height="800" alt=""></dialog></body></html>`;
 }
-export function marketingNotFound(){return `<!doctype html><html lang="zh-CN" data-page="marketing"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>页面不存在｜知行方舟</title><link rel="icon" href="/brand/ark.svg" type="image/svg+xml"><link rel="stylesheet" href="/site.css?v=20261107-geo-employee-r1"></head><body class="marketing">${header('')}<main id="main-content" class="page-intro site-shell"><h1>页面不存在</h1><div class="hero-actions">${link('/','返回首页',true)}${link('/employees','查看数字员工')}</div></main>${footer()}<script src="/site.js?v=20261107-geo-employee-r1" defer></script></body></html>`;}
+export function marketingNotFound(){return `<!doctype html><html lang="zh-CN" data-page="marketing"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex,nofollow"><title>页面不存在｜知行方舟</title><link rel="icon" href="/brand/ark.svg" type="image/svg+xml"><link rel="stylesheet" href="/site.css?v=20261110-manufacturing-r1"></head><body class="marketing">${header('')}<main id="main-content" class="page-intro site-shell"><h1>页面不存在</h1><div class="hero-actions">${link('/','返回首页',true)}${link('/employees','查看数字员工')}</div></main>${footer()}<script src="/site.js?v=20261110-manufacturing-r1" defer></script></body></html>`;}

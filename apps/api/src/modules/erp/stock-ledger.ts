@@ -1,3 +1,4 @@
+import { applyAllocation, lockStock, type Tracking } from './warehouse-allocation';
 import { Prisma } from '../../generated/prisma/client';
 import type { RequestContext } from '../platform/context';
 import { conflict, failNotFound, storedMoney, type Transaction } from './erp.common';
@@ -15,7 +16,8 @@ export async function warehouseBalance(tx: Transaction, ctx: RequestContext, pro
  }
  return tx.erpWarehouseStock.upsert({ where: { warehouseId_productId: { warehouseId, productId } }, create: { tenantId: ctx.tenantId, warehouseId, productId }, update: {} });
 }
-export async function stockMove(tx: Transaction, ctx: RequestContext, input: { productId: string; warehouseId?: string; direction: 'in' | 'out'; quantity: number; unitCost?: Prisma.Decimal; costAmount?: Prisma.Decimal; tradeAmount?: Prisma.Decimal; grossAmount?: Prisma.Decimal; costEstimated?: boolean; sourceType: string; sourceId: string; documentId: string }) {
+export async function stockMove(tx: Transaction, ctx: RequestContext, input: { productId: string; warehouseId?: string; direction: 'in' | 'out'; quantity: number; unitCost?: Prisma.Decimal; costAmount?: Prisma.Decimal; tradeAmount?: Prisma.Decimal; grossAmount?: Prisma.Decimal; costEstimated?: boolean; sourceType: string; sourceId: string; documentId: string; tracking?: Tracking; orderId?: string }) {
+ await lockStock(tx, ctx.tenantId);
  const wh = await warehouse(tx, ctx, input.warehouseId);
  const balance = await tx.erpInventoryBalance.findFirst({ where: { tenantId: ctx.tenantId, productId: input.productId } });
  if (!balance) failNotFound('商品库存');
@@ -26,6 +28,7 @@ export async function stockMove(tx: Transaction, ctx: RequestContext, input: { p
  const next = qty(balance.quantity + sign * amount), localNext = qty(local.quantity + sign * amount);
  if (next < 0 || localNext < 0) conflict('所选仓库库存不足，本次操作未提交');
  if (next > 1e9 || localNext > 1e9) conflict('库存数量超过系统范围');
+ await applyAllocation(tx, { tenantId: ctx.tenantId, warehouseId: wh.id, productId: input.productId }, local.quantity, { ...input, quantity: amount });
  const average = balance.quantity > 0 ? balance.inventoryValue.div(balance.quantity) : new Prisma.Decimal(0);
  const unitCost = input.direction === 'out' ? average : input.unitCost ?? average;
  const costAmount = input.costAmount ?? (input.direction === 'out' && next === 0 ? balance.inventoryValue : unitCost.mul(amount).toDecimalPlaces(2));
@@ -35,5 +38,5 @@ export async function stockMove(tx: Transaction, ctx: RequestContext, input: { p
  if (!changed.count) conflict('库存已变化，请刷新重试');
  const wc = await tx.erpWarehouseStock.updateMany({ where: { id: local.id, version: local.version }, data: { quantity: localNext, version: { increment: 1 } } });
  if (!wc.count) conflict('仓库库存已变化，请刷新重试');
- return tx.erpStockMovement.create({ data: { tenantId: ctx.tenantId, productId: input.productId, warehouseId: wh.id, direction: input.direction, quantity: amount, unitCost: unitCost.toDecimalPlaces(6), costAmount, tradeAmount: input.tradeAmount, grossAmount:input.grossAmount, costEstimated: balance.costEstimated || Boolean(input.costEstimated)||(input.direction==='in'&&input.sourceType==='stocktake'&&balance.quantity===0&&input.unitCost===undefined), sourceType: input.sourceType, sourceId: input.sourceId, documentId: input.documentId, actorMembershipId: ctx.membershipId } });
+ return tx.erpStockMovement.create({ data: { tenantId: ctx.tenantId, productId: input.productId, warehouseId: wh.id, direction: input.direction, quantity: amount, trackingCode: input.tracking?.code, trackingKind: input.tracking?.kind, unitCost: unitCost.toDecimalPlaces(6), costAmount, tradeAmount: input.tradeAmount, grossAmount:input.grossAmount, costEstimated: balance.costEstimated || Boolean(input.costEstimated)||(input.direction==='in'&&input.sourceType==='stocktake'&&balance.quantity===0&&input.unitCost===undefined), sourceType: input.sourceType, sourceId: input.sourceId, documentId: input.documentId, actorMembershipId: ctx.membershipId } });
 }

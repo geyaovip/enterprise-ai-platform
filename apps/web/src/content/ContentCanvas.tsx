@@ -48,7 +48,7 @@ import {
   Notice,
   RecordActions,
 } from "../components";
-import { InfoTip } from "@suite/frontend/components";
+import { DropdownSelect, InfoTip } from "@suite/frontend/components";
 import {
   assetDownloadName,
   FileInput,
@@ -179,7 +179,7 @@ export function CanvasList() {
         />
       </AssetLibraryHeader>
       <div className="content-library-filters">
-        <select
+        <DropdownSelect
           className="content-library-select"
           aria-label="筛选画布范围"
           value={visibility}
@@ -191,7 +191,7 @@ export function CanvasList() {
           <option value="">筛选 · 全部范围</option>
           <option value="private">项目私有</option>
           <option value="tenant">企业共享</option>
-        </select>
+        </DropdownSelect>
         <LibraryTimeSort
           canvas
           days={days}
@@ -1365,7 +1365,7 @@ function CanvasWorkspace({ id }: { id: string }) {
               }
             />
             <div className="canvas-compose-actions">
-              <select
+              <DropdownSelect
                 aria-label="创作类型"
                 value={mode}
                 disabled={locked}
@@ -1373,7 +1373,7 @@ function CanvasWorkspace({ id }: { id: string }) {
               >
                 <option value="image">图片生成</option>
                 <option value="video">视频生成</option>
-              </select>
+              </DropdownSelect>
               <MediaOptions
                 mode={mode}
                 preserveSize={imageMode && !!activeRegion}
@@ -1385,7 +1385,7 @@ function CanvasWorkspace({ id }: { id: string }) {
                 onClip={setClip}
               />
               {imageMode ? (
-                <select
+                <DropdownSelect
                   aria-label="添加画布参考图"
                   value=""
                   disabled={
@@ -1408,9 +1408,9 @@ function CanvasWorkspace({ id }: { id: string }) {
                         {board.assets[n.assetId!].filename}
                       </option>
                     ))}
-                </select>
+                </DropdownSelect>
               ) : (
-                <select
+                <DropdownSelect
                   aria-label="视频首帧"
                   value={frame?.id ?? ""}
                   disabled={locked}
@@ -1428,7 +1428,7 @@ function CanvasWorkspace({ id }: { id: string }) {
                       {board.assets[n.assetId!].filename}
                     </option>
                   ))}
-                </select>
+                </DropdownSelect>
               )}
               <EntitySelect<{
                 id: string;

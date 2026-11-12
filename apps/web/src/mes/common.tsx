@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { PagedCollection } from '../components';
 import { createContext, useContext, useState, useRef, useEffect } from "react";
 import type { ReactNode } from "react";
@@ -172,7 +173,7 @@ export function useList(type: string, { defaultStatus = "" } = {}) {
           onChange={(e) => setQ(e.target.value)}
         />
         {type !== "materials" && (
-          <select
+          <DropdownSelect
             aria-label="状态"
             value={status}
             onChange={(e) =>
@@ -196,7 +197,7 @@ export function useList(type: string, { defaultStatus = "" } = {}) {
                 {labels[s]}
               </option>
             ))}
-          </select>
+          </DropdownSelect>
         )}
         <button type="submit">查询</button>
         <button

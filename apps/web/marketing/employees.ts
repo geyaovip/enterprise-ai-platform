@@ -37,4 +37,4 @@ export const employees = {
 
 export const employeeIds: readonly EmployeeProduct[] = ['erp', 'crm', 'mes', 'content', 'geo'];
 export const employeeHref = (id: EmployeeProduct) => `/employees#${id}`;
-export const employeeAvatar = (id: EmployeeProduct) => `/marketing/employee-${id}.${id==='content'||id==='geo'?'svg':'png'}`;
+export const employeeAvatar = (id: EmployeeProduct) => id === 'content' || id === 'geo' ? employees[id].avatar : `/marketing/employee-${id}.png`;

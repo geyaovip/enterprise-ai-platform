@@ -1,3 +1,4 @@
+import { DropdownSelect } from '@suite/frontend/components';
 import { RecordActions, ChoiceSelect } from '../components';
 import { BomTaskHistory } from './BomTaskHistory';
 import { usePagedArray } from '../hooks';
@@ -259,7 +260,7 @@ function Materials() {
                 />
               </Field>
               <Field label="类型">
-                <select
+                <DropdownSelect
                   disabled={!!edit.id}
                   value={edit.kind}
                   onChange={(e) =>
@@ -279,7 +280,7 @@ function Materials() {
                       </option>
                     ),
                   )}
-                </select>
+                </DropdownSelect>
               </Field>
               <Field label="基础单位">
                 <input
@@ -293,7 +294,7 @@ function Materials() {
                 />
               </Field>
               <Field label="状态">
-                <select
+                <DropdownSelect
                   value={String(edit.active)}
                   onChange={(e) =>
                     setEdit({ ...edit, active: e.target.value === "true" })
@@ -301,7 +302,7 @@ function Materials() {
                 >
                   <option value="true">正常</option>
                   <option value="false">停用</option>
-                </select>
+                </DropdownSelect>
               </Field>
             </div>
             <DialogAction>
@@ -656,7 +657,7 @@ function BomDetail() {
                       {b.status === "draft" && c.can("mes.bom.write") ? (
                         <div className="form-grid">
                           <Field label="处理结论">
-                            <select
+                            <DropdownSelect
                               value={decisions[f.id]?.decision ?? ""}
                               onChange={(e) =>
                                 setDecisions({
@@ -674,7 +675,7 @@ function BomDetail() {
                                 已核实，保留设计
                               </option>
                               <option value="false_positive">误报</option>
-                            </select>
+                            </DropdownSelect>
                           </Field>
                           <Field label="核实依据">
                             <input
@@ -1612,7 +1613,7 @@ function Settings() {
           {a.notices}
           <p>{edit?.user.name}</p>
           <Field label="MES岗位">
-            <select
+            <DropdownSelect
               value={edit?.selected ?? ""}
               onChange={(e) => setEdit({ ...edit, selected: e.target.value })}
             >
@@ -1622,7 +1623,7 @@ function Settings() {
                   {labels[r]}
                 </option>
               ))}
-            </select>
+            </DropdownSelect>
           </Field>
           <DialogAction>
             <button className="primary" type="submit" disabled={a.busy}>

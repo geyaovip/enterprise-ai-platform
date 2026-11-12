@@ -3,7 +3,7 @@ import { QRCodeSVG } from "qrcode.react";
 import { Copy, RefreshCw } from "lucide-react";
 import { api, errorText, tenantApi } from "../api";
 import { useApiData } from "../hooks";
-import {
+import { DropdownSelect,
   ConfirmDialog,
   DataResult,
   Dialog,
@@ -253,7 +253,7 @@ function ChannelCard({
             </InfoTip>
           </div>
           <Field label={channel.name + "默认助手"}>
-            <select
+            <DropdownSelect
               value={identity.data.appId ?? ""}
               disabled={busy || !connected || !identity.data.apps?.length}
               onChange={(event) => {
@@ -276,7 +276,7 @@ function ChannelCard({
                   {app.name}
                 </option>
               ))}
-            </select>
+            </DropdownSelect>
           </Field>
 
           <div className="form-actions">

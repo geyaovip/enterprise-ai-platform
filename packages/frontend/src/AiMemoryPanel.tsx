@@ -1,6 +1,6 @@
 import {useEffect,useId,useState} from 'react';
 import {api,errorText} from './api';
-import { RecordActions,Dialog,DialogAction,ConfirmDialog,Field,Notice,Loading,Empty,TabBar} from './components';
+import { DropdownSelect, RecordActions,Dialog,DialogAction,ConfirmDialog,Field,Notice,Loading,Empty,TabBar} from './components';
 import {useApiData} from './hooks';
 type Entry={id:string;title:string;content:string;kind:'preference'|'convention';visibility:'personal'|'enterprise';version:number;expiresAt:string|null;updatedAt:string;editable:boolean};
 type MemoryData={enabled:boolean;items:Entry[];canManageShared:boolean;indexCleanupPending:boolean;engine:{configured:boolean;mode:string}};
@@ -26,7 +26,7 @@ export function AiMemoryPanel({open,base,onClose,onChanged}:{open:boolean;base:s
     <div className="memory-list">{data.data.items.filter(x=>x.visibility===scope).length===0?<Empty text="还没有保存记忆。"/>:data.data.items.filter(x=>x.visibility===scope).map(x=><article key={x.id} className="memory-item"><div className="memory-item-heading"><h3>{x.title}</h3></div><p>{x.content}</p><div className="memory-item-footer"><span>{x.expiresAt?(new Date(x.expiresAt)<=new Date()?'已过期':'有效至')+' '+x.expiresAt.slice(0,10):'长期有效'}</span>{x.editable&&<RecordActions><button type="button" disabled={busy} onClick={()=>start(x)}>修改</button><button className="danger" type="button" disabled={busy} onClick={()=>setRemoving(x)}>删除</button></RecordActions>}</div></article>)}</div>
    </>:<form id={formId} onSubmit={e=>{e.preventDefault();void save();}} className="memory-form">
     <Field label="标题"><input disabled={busy} value={form.title} maxLength={60} required onChange={e=>setForm({...form,title:e.target.value})}/></Field>
-    <Field label="记忆类型"><select disabled={busy} value={form.kind} onChange={e=>setForm({...form,kind:e.target.value as Entry['kind']})}><option value="preference">回答偏好</option><option value="convention">工作约定</option></select></Field>
+    <Field label="记忆类型"><DropdownSelect disabled={busy} value={form.kind} onChange={e=>setForm({...form,kind:e.target.value as Entry['kind']})}><option value="preference">回答偏好</option><option value="convention">工作约定</option></DropdownSelect></Field>
     <Field label="记忆内容" ><textarea disabled={busy} value={form.content} maxLength={800} rows={5} required onChange={e=>setForm({...form,content:e.target.value})}/></Field>
     <Field label="有效期（可选）"><input disabled={busy} type="date" value={form.expiresAt} onChange={e=>setForm({...form,expiresAt:e.target.value})}/></Field>
     <DialogAction replacesClose><button type="button" disabled={busy} onClick={back}>返回列表</button><button className="primary" disabled={busy} form={formId} type="submit">{busy?'保存中…':'保存记忆'}</button></DialogAction>

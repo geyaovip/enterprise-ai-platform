@@ -1,6 +1,6 @@
 # 知行方舟 · 企业 AI 应用平台
 
-知行方舟把企业知识、业务应用和数字员工接入同一个工作台。团队可以用 ERP 管理进销存，用 CRM 跟进客户，用 MES 管理生产，用品牌内容创作素材，也可以用 GEO 分析品牌在 AI 回答中的可见度。五个应用共用企业账号、岗位权限、任务、通知和审计。
+知行方舟把企业知识、业务应用和数字员工接入同一个工作台。团队可以用 ERP 管理进销存，用 CRM 跟进客户，用 MES 管理生产，用品牌内容创作素材，用 GEO 分析品牌在 AI 回答中的可见度，并用制造业进销存协同接单、采购、生产和交付。六个应用共用企业账号、岗位权限、任务、通知和审计。
 
 [官网](https://zhixingark.cn) · [工作场景](https://zhixingark.cn/solutions) · [数字员工](https://zhixingark.cn/employees) · [登录工作台](https://zhixingark.cn/login)
 
@@ -13,6 +13,7 @@
 | [MES 制造执行](https://zhixingark.cn/products#mes) | 图纸与 BOM 核查、生产计划、工单、报工审核 | MES 生产官 |
 | [品牌内容](https://zhixingark.cn/products#content) | 图片与视频工作流、参考素材、画布、生成记录和下载 | 品牌内容创作官 |
 | [GEO 品牌可见度](https://zhixingark.cn/products#geo) | 多模型分析、品牌与竞品对比、回答与引用证据、PDF 报告、定期监测和同条件复测 | GEO 品牌分析官 |
+| [制造业进销存](https://zhixingark.cn/products#manufacturing) | 销售接单、备料采购、生产派工、库存和发货追溯 | 制造履约与物料协同专家 |
 
 GEO 按企业开通。获授权的成员可以在报告中点「解读报告」，让品牌分析官基于当前报告解释品牌提及、竞品缺席和引用证据，并准备复测。批量分析与复测由用户在 GEO 页面确认费用。平台 GEO 从新数据开始。 [GEO 接入与权限](docs/geo/01-接口权限与状态.md) · [GEO 品牌分析官](docs/158-GEO品牌分析官.md)
 
@@ -24,7 +25,7 @@ GEO 按企业开通。获授权的成员可以在报告中点「解读报告」�
 
 | 目录 | 内容 |
 | --- | --- |
-| `apps/web` | 官网、登录、企业工作台和五个应用 |
+| `apps/web` | 官网、登录、企业工作台和六个应用 |
 | `apps/admin`、`apps/platform-admin` | 企业管理端与平台运营端 |
 | `apps/api` | API、Worker、应用模块、Prisma 模型和迁移 |
 | `packages/frontend` | 共享 UI、账号、通知、AI 对话和品牌组件 |
@@ -72,7 +73,7 @@ pnpm build:cloud
 pnpm test:seo
 ```
 
-GitHub Actions 执行锁定依赖安装、类型检查、API 与三前端构建、官网路由及 SEO 检查。生产发布由独立流程执行。业务和权限用例位于 `apps/api/tests`，数据库回归使用独立测试库，真实模型调用单独验证。 [开发与测试规范](docs/06-开发与测试规范.md)
+GitHub Actions 执行锁定依赖安装、类型检查、API 与三前端构建、官网路由及 SEO 检查。前端发布使用通过 CI 的提交产物，Cloudflare 记录 Git SHA 与 CI 运行编号。 [前端发布手册](infrastructure/frontend-release.md) 业务和权限用例位于 `apps/api/tests`，数据库回归使用独立测试库，真实模型调用单独验证。 [开发与测试规范](docs/06-开发与测试规范.md)
 
 ## 文档入口
 

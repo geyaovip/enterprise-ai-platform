@@ -74,6 +74,7 @@
 .suite-ai-panel .message>button { margin-top:10px; }
 .ai-welcome { max-width:480px; width:100%; margin:0 auto; padding:16px 0 28px; text-align:center; }
 .ai-welcome>svg { color:var(--brand); margin:0 0 10px; }
+.ai-welcome>img { display:block; width:48px; height:48px; margin:0 auto 10px; border-radius:50%; object-fit:cover; }
 .ai-welcome h2 { font-size:19px; line-height:30px; font-weight:600; margin:0 0 28px; }
 .ai-starters { display:grid; gap:10px; max-width:380px; margin:0 auto; width:calc(100% - 48px); }
 .ai-starters button { min-height:66px; padding:12px 14px; justify-content:flex-start; gap:12px; border:1px solid var(--border); border-radius:12px; background:var(--surface-raised); color:var(--text); font-size:14px; font-weight:400; white-space:normal; text-align:left; }
