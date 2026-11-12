@@ -1,7 +1,7 @@
 // Adapted from Loomic image-attachment-bar.tsx, commit 21206c30054572291b9df000d84568aeca97aeda.
 // Copyright (c) 2026 Xinmin Zeng. MIT; see third-party/Loomic-LICENSE.
 // Platform adaptation: one private asset ID, accessible remove, no Supabase or canvas dependency.
-import { ImageIcon, XIcon } from "@phosphor-icons/react";
+import { XIcon } from "@phosphor-icons/react";
 import { clipDefaults, type ClipOptions, type MediaMode } from "./MediaOptions";
 export type ReferenceImage = { id: string; preview: string; name: string };
 export function saveReferenceDraft(
@@ -61,24 +61,18 @@ export function ReferenceAttachment({
   image,
   onRemove,
   disabled,
-  label = "参考图",
 }: {
   image: ReferenceImage;
   onRemove: () => void;
   disabled?: boolean;
-  label?: string;
 }) {
   return (
     <div className="studio-reference">
-      <img src={image.preview} alt={label + "：" + image.name} />
-      <span>
-        <ImageIcon size={14} aria-hidden="true" />
-        {label}
-      </span>
+      <img src={image.preview} alt={"参考图：" + image.name} />
       <button
         type="button"
-        aria-label={"移除" + label}
-        title={"移除" + label}
+        aria-label={"移除参考图：" + image.name}
+        title="移除参考图"
         disabled={disabled}
         onClick={onRemove}
       >

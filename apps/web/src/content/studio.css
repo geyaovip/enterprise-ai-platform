@@ -362,23 +362,18 @@
   gap: 16px;
   align-items: flex-start;
 }
-.studio-input-attachments {
-  display: grid;
-  justify-items: start;
-  gap: 5px;
-  flex: none;
-  max-width: 100%;
-}
-.studio-input-attachments:not(:has(button, img)) {
-  display: none;
-}
 .studio-input-references {
+  --reference-tile: 76px;
   display: flex;
+  flex: none;
   flex-wrap: wrap;
   align-items: flex-end;
-  gap: 12px;
+  gap: 9px;
   max-width: 100%;
   position: relative;
+}
+.studio-input-references:has(.studio-reference + .studio-reference) {
+  max-width: 50%;
 }
 .studio-composer-input textarea {
   flex: 1;
@@ -429,42 +424,6 @@
   font-size: 12px;
   box-shadow: none;
 }
-.studio-composer .studio-local-upload:not(.studio-submit) {
-  width: 78px;
-  height: 78px;
-  display: grid;
-  align-content: center;
-  justify-items: center;
-  gap: 4px;
-  padding: 0;
-  border: 1px solid var(--border);
-  border-radius: 11px;
-  background: var(--control-bg);
-  color: var(--text);
-  font-size: 11px;
-  white-space: nowrap;
-}
-.studio-composer .studio-local-upload:hover:not(:disabled) {
-  background: var(--control-hover);
-  border-color: var(--input-border);
-}
-.studio-composer .studio-local-upload-compact:not(.studio-submit) {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-}
-.studio-input-references.is-single .studio-local-upload-compact {
-  position: absolute;
-  right: -8px;
-  bottom: -4px;
-}
-.studio-composer .studio-asset-picker:not(.studio-submit) {
-  min-height: 26px;
-  padding: 0 3px;
-  color: var(--muted);
-  font-size: 11px;
-}
-.studio-composer .studio-asset-picker:hover:not(:disabled),
 .studio-composer .studio-context-toggle:hover:not(:disabled),
 .studio-composer .studio-home-toolbar .studio-context-toggle:hover:not(:disabled) {
   color: var(--brand);
@@ -551,6 +510,36 @@
 .studio-composer .studio-dropdown-trigger:hover:not(:disabled),
 .studio-composer .studio-dropdown-trigger[aria-expanded="true"]:not(:disabled) {
   background: var(--control-hover);
+}
+.studio-composer .studio-dropdown-trigger.studio-reference-trigger:not(.studio-submit) {
+  width: var(--reference-tile);
+  height: var(--reference-tile);
+  padding: 0;
+  border-radius: 12px;
+  background: var(--control-bg);
+}
+.studio-composer .studio-reference-trigger:is(:hover, [aria-expanded="true"]):not(:disabled) {
+  background: var(--control-hover);
+  border-color: var(--input-border);
+}
+.studio-input-references:has(> .studio-reference) > .studio-dropdown .studio-reference-trigger:not(.studio-submit) {
+  width: 38px;
+  height: 38px;
+  border-radius: 50%;
+}
+.studio-input-references:not(:has(.studio-reference + .studio-reference)) > .studio-reference + .studio-dropdown {
+  position: absolute;
+  inset-inline-end: -6px;
+  bottom: -4px;
+}
+.studio-reference-menu-note {
+  max-width: 210px;
+  margin: 5px 5px 0;
+  padding: 8px 5px 4px;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.5;
 }
 .studio-dropdown-panel {
   position: fixed;
@@ -798,37 +787,24 @@
   display: none;
 }
 .studio-reference {
-  width: 72px;
-  height: 80px;
+  width: var(--reference-tile);
+  height: var(--reference-tile);
   position: relative;
   flex: none;
   border: 1px solid var(--border);
-  border-radius: 10px;
+  border-radius: 12px;
   overflow: visible;
 }
 .studio-reference > img {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 9px;
-}
-.studio-reference > span {
-  display: flex;
-  gap: 3px;
-  align-items: center;
-  position: absolute;
-  bottom: 0;
-  inset-inline: 0;
-  padding: 3px;
-  border-radius: 0 0 9px 9px;
-  color: #fff;
-  background: #000b;
-  font-size: 10px;
+  border-radius: 11px;
 }
 .studio-reference > button {
   position: absolute;
-  right: -6px;
-  top: -7px;
+  inset-inline-end: 4px;
+  top: 4px;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1219,13 +1195,6 @@
   .studio-composer .studio-parameters button:not(.studio-submit) {
     min-height: 44px;
   }
-  .studio-composer .studio-local-upload-compact:not(.studio-submit) {
-    width: 44px;
-    height: 44px;
-  }
-  .studio-composer .studio-asset-picker:not(.studio-submit) {
-    min-height: 36px;
-  }
   .studio-composer .dropdown-select-trigger,
   .studio-composer button.studio-context-toggle {
     min-height: 44px;
@@ -1366,9 +1335,10 @@
   .studio-composer-input:has(.studio-input-references > .studio-reference + .studio-reference) textarea {
     flex-basis: 100%;
   }
-  .studio-input-references .studio-reference {
-    width: 56px;
-    height: 64px;
+  .studio-input-references,
+  .studio-input-references:has(.studio-reference + .studio-reference) {
+    --reference-tile: 60px;
+    max-width: 100%;
   }
 }
 .content-region-preview {

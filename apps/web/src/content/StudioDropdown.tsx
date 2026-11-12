@@ -7,6 +7,7 @@ export function StudioDropdown({
   summary,
   disabled,
   wide = false,
+  triggerClassName,
   children,
 }: {
   label: string;
@@ -14,6 +15,7 @@ export function StudioDropdown({
   summary?: string;
   disabled?: boolean;
   wide?: boolean;
+  triggerClassName?: string;
   children: (close: () => void) => ReactNode;
 }) {
   const id = useId();
@@ -59,7 +61,7 @@ export function StudioDropdown({
       <button
         ref={trigger}
         type="button"
-        className="studio-dropdown-trigger"
+        className={["studio-dropdown-trigger", triggerClassName].filter(Boolean).join(" ")}
         aria-label={summary && summary !== label ? `${label}：${summary}` : label}
         aria-expanded={open}
         aria-controls={id}

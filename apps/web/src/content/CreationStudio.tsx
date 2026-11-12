@@ -32,6 +32,8 @@ import {
   DotsThreeIcon,
   FilmSlateIcon,
   CubeIcon,
+  FolderOpenIcon,
+  UploadSimpleIcon,
 } from "@phosphor-icons/react";
 import { api, ApiError, errorText } from "../api";
 import { useApiData } from "../hooks";
@@ -314,7 +316,7 @@ function StudioScreen({ id }: { id: string }) {
   const pending = action.busy || upload.busy;
   const canAttach = canCreate && (!imageMode || references.length < maxReferences);
   const inputReferences = imageMode ? references : video.frame ? [video.frame] : [];
-  const uploadLabel = imageMode ? "上传参考图" : video.frame ? "更换首帧" : "上传首帧";
+  const uploadLabel = !imageMode && video.frame ? "更换参考图" : "添加参考图";
   const patch = (v: Partial<Draft>) => setDraft((d) => ({ ...d, ...v }));
   const changeMode = (value: MediaMode | "assistant") => {
     if (value === "assistant") {
@@ -1028,14 +1030,13 @@ function StudioScreen({ id }: { id: string }) {
         )}
         <form className="studio-composer" onSubmit={submit}>
           <div className="studio-composer-input">
-            <div className="studio-input-attachments">
-              <div className={"studio-input-references" + (inputReferences.length === 1 ? " is-single" : "")}>
+            {(canAttach || inputReferences.length > 0) && (
+              <div className="studio-input-references">
                 {inputReferences.map((image, index) => (
                   <ReferenceAttachment
                     key={image.id}
                     image={image}
                     disabled={pending}
-                    label={imageMode ? "参考图" : "首帧"}
                     onRemove={() => {
                       if (!imageMode) {
                         patchVideo({
@@ -1052,30 +1053,47 @@ function StudioScreen({ id }: { id: string }) {
                   />
                 ))}
                 {canAttach && (
-                  <button
-                    type="button"
-                    className={"studio-local-upload" + (inputReferences.length ? " studio-local-upload-compact" : "")}
-                    aria-label={uploadLabel}
-                    title={uploadLabel}
+                  <StudioDropdown
+                    label={uploadLabel}
+                    icon={<PlusIcon size={inputReferences.length ? 18 : 29} aria-hidden="true" />}
+                    triggerClassName="studio-reference-trigger"
                     disabled={pending}
-                    onClick={() => uploadInput.current?.click()}
                   >
-                    <PlusIcon size={inputReferences.length ? 17 : 25} aria-hidden="true" />
-                    {!inputReferences.length && <span>{uploadLabel}</span>}
-                  </button>
+                    {(close) => (
+                      <>
+                        <button
+                          type="button"
+                          className="studio-dropdown-row"
+                          onClick={() => {
+                            close();
+                            uploadInput.current?.click();
+                          }}
+                        >
+                          <UploadSimpleIcon size={17} aria-hidden="true" />
+                          <span>本地上传</span>
+                        </button>
+                        <button
+                          type="button"
+                          className="studio-dropdown-row"
+                          onClick={() => {
+                            close();
+                            setAttachOpen(true);
+                          }}
+                        >
+                          <FolderOpenIcon size={17} aria-hidden="true" />
+                          <span>从素材库选择</span>
+                        </button>
+                        {!imageMode && (
+                          <p className="studio-reference-menu-note">
+                            此模型会将参考图用作起始画面。
+                          </p>
+                        )}
+                      </>
+                    )}
+                  </StudioDropdown>
                 )}
               </div>
-              {canAttach && (
-                <button
-                  type="button"
-                  className="studio-asset-picker"
-                  disabled={pending}
-                  onClick={() => setAttachOpen(true)}
-                >
-                  从素材库选
-                </button>
-              )}
-            </div>
+            )}
             <textarea
               ref={input}
               aria-label="创作需求"
@@ -1085,8 +1103,8 @@ function StudioScreen({ id }: { id: string }) {
                 imageMode
                   ? references.length
                     ? "描述修改要求…"
-                    : "描述画面，或添加参考图…"
-                  : "描述视频内容和镜头运动，也可上传首帧…"
+                    : "描述你想生成的画面，也可添加参考图…"
+                  : "描述视频内容和镜头运动，也可添加参考图…"
               }
               value={prompt}
               onChange={(e) =>
@@ -1351,7 +1369,7 @@ function StudioScreen({ id }: { id: string }) {
       )}
       <Dialog
         open={attachOpen}
-        title={imageMode ? "添加参考图" : "选择视频首帧"}
+        title="从素材库选择参考图"
         onClose={() => setAttachOpen(false)}
       >
         <div className="canvas-asset-scopes">
