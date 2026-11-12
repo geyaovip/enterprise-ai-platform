@@ -61,9 +61,15 @@ function WorkspaceApp() {
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const location=useLocation();
-  const refresh = useCallback(async () => {
+  const refresh = useCallback(async (onProfile?: (profile: Me) => void) => {
     setLoading(true);
-    try { const profile=await api.get<Me>('/me');try { sessionStorage.setItem('suite:view-user',profile.user.id); } catch { /* Login does not depend on browser UI storage. */ } setMe(profile); setError(null); }
+    try {
+      const profile = await api.get<Me>('/me');
+      try { sessionStorage.setItem('suite:view-user', profile.user.id); } catch { /* Login does not depend on browser UI storage. */ }
+      onProfile?.(profile);
+      setMe(profile);
+      setError(null);
+    }
     catch (e) { if (e instanceof ApiError && e.status === 401) setMe(null); else setError(errorText(e)); }
     finally { setLoading(false); }
   }, []);
@@ -75,7 +81,11 @@ function WorkspaceApp() {
   const logout = async () => { try { await api.post('/auth/logout', {}); } finally { try { for(const key of Object.keys(sessionStorage))if(key.startsWith('suite:view:'))sessionStorage.removeItem(key);sessionStorage.removeItem('suite:view-user'); } catch { /* The server session was already cleared. */ } setMe(null); navigate('/login'); } };
   if (loading) return <div className="boot"><Loading /></div>;
   if(location.pathname==='/join')return <JoinPage/>;
-  if (!me) return <AuthScreen title="登录工作台" onLogin={refresh} initialError={error} />;
+  if (!me) return <AuthScreen title="登录工作台" onLogin={() => refresh(profile => {
+    if (profile.tenants.length > 1 && location.pathname.startsWith('/t/')) {
+      navigate('/tenants', { replace: true, state: { returnTo: location.pathname + location.search } });
+    }
+  })} initialError={error} />;
   if (!me.tenants.length) return <EnterpriseOnboarding workspaceUrl={import.meta.env.BASE_URL.replace(/\/$/, '')} returnTo={location.pathname.startsWith('/connect/')?location.pathname+location.search:undefined} onCreated={refresh} onLogout={logout}/>;
   return <Routes>
     <Route path="/connect/authorize" element={<ConnectorAuthorizePage/>}/>
@@ -96,7 +106,18 @@ function ManagementAiRedirect({ tenantKey, operator=false }: {tenantKey:string;o
 }
 
 function TenantPicker({ memberships, onLogout }: { memberships: TenantMembership[]; onLogout: () => void }) {
-  return <main className="picker"><PageTitle title="选择企业" action={<><Link className="button" to="/onboarding">创建或加入企业</Link><button onClick={onLogout}>退出登录</button></>} />{memberships.length ? <div className="cards">{memberships.map(item => <Link className="tenant-card" key={item.id} to={`/t/${item.tenant.slug}`}><strong>{item.tenant.name}</strong><span>{({ admin: '企业管理员', sales: '销售', purchasing: '采购', warehouse: '仓库', finance: '财务' } as Record<string, string>)[item.role] ?? '企业成员'}</span></Link>)}</div> : <Empty text="当前账号没有可访问的企业，请联系管理员。" />}</main>;
+  const { state } = useLocation();
+  const returnTo = typeof state?.returnTo === 'string' ? state.returnTo : null;
+  return <main className="picker">
+    <PageTitle title="选择企业" action={<><Link className="button" to="/onboarding">创建或加入企业</Link><button onClick={onLogout}>退出登录</button></>} />
+    {memberships.length ? <div className="cards">{memberships.map(item => (
+      <Link className="tenant-card" key={item.id}
+        to={safeReturn(returnTo, item.tenant.slug, true) ?? `/t/${item.tenant.slug}`} replace>
+        <strong>{item.tenant.name}</strong>
+        <span>{({ admin: '企业管理员', sales: '销售', purchasing: '采购', warehouse: '仓库', finance: '财务' } as Record<string, string>)[item.role] ?? '企业成员'}</span>
+      </Link>
+    ))}</div> : <Empty text="当前账号没有可访问的企业，请联系管理员。" />}
+  </main>;
 }
 
 const erpNav = [
@@ -211,7 +232,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
     <aside id="shell-navigation" className={`sidebar ${menu ? 'open' : ''}`}>
       <ShellBrand subtitle="企业应用平台"/>
       <ApplicationSwitcher {...applicationNavigation}/>
-      {contentActive ? <Link className="studio-space" to="/tenants" aria-label={`切换企业空间，当前为${membership.tenant.name}`}><span>{membership.tenant.name}</span><ContentNavIcon path="space"/></Link> : <div className="tenant-label workspace-tenant">{membership.tenant.name}</div>}
+      <div className="tenant-label workspace-tenant">{membership.tenant.name}</div>
       <nav ref={navigationRef} aria-label="主导航">
         {geoActive&&<section className="nav-group" aria-label="GEO导航">{geoNavigation.filter(([, ,p])=>geoMeta.data?.permissions.includes(p)).map(([path,label])=><Link key={path} to={prefix+'/geo'+(path?'/'+path:'')} className={(path?active('geo/'+path):(location.pathname===prefix+'/geo'||active('geo/projects')))?'active':''} aria-current={(path?active('geo/'+path):(location.pathname===prefix+'/geo'||active('geo/projects')))?'page':undefined}><NavIcon name="reports"/>{label}</Link>)}</section>}
         {contentActive&&<section className="nav-group" aria-label="品牌内容导航">{contentNavigation.filter(([, ,p])=>contentMeta.data?.permissions.includes(p)).map(([path,label])=><Link key={path} to={prefix+'/content'+(path?'/'+path:'')} className={(path?active('content/'+path):(location.pathname===prefix+'/content'||active('content/projects')||active('content/canvases')))?'active':''} aria-current={(path?active('content/'+path):(location.pathname===prefix+'/content'||active('content/projects')||active('content/canvases')))?'page':undefined}><ContentNavIcon path={path}/>{label}</Link>)}<ContentHistory key={tenantKey} tenantKey={tenantKey} permissions={contentMeta.data?.permissions??[]}/></section>}
@@ -247,7 +268,7 @@ function TenantShell({ me, onLogout }: { me: Me; onLogout: () => Promise<void> }
       <div className="sidebar-footer"><UserMenu name={me.user.name} email={me.user.account ?? me.user.email} subtitle={({ admin: '企业管理员', sales: '销售', purchasing: '采购', warehouse: '仓库', finance: '财务' } as Record<string, string>)[membership.role] ?? '企业成员'} closeKey={`${location.pathname}:${menu}`} onLogout={onLogout} trailingAction={<NotificationCenter memberships={[membership]} closeKey={location.pathname} onOpen={() => setMenu(false)} onNavigate={() => setMenu(false)}/> }>
         <Link to={`${prefix}/account`} aria-current={active('account') ? 'page' : undefined}><UserMenuIcon name="account" />账号设置</Link>
         <Link to="/connect/connections"><UserMenuIcon name="account" />已连接应用</Link>
-        {me.tenants.length > 1 && <Link to="/tenants"><UserMenuIcon name="company" />切换企业</Link>}<Link to="/onboarding"><UserMenuIcon name="company" />创建或加入企业</Link>
+        <Link to="/onboarding"><UserMenuIcon name="company" />创建或加入企业</Link>
         {membership.role === 'admin' && <a href={`${import.meta.env.VITE_TENANT_ADMIN_URL ?? 'http://127.0.0.1:4603'}/t/${tenantKey}`}><UserMenuIcon name="company" />企业管理</a>}
         {me.platformRole === 'operator' && <a href={`${import.meta.env.VITE_PLATFORM_ADMIN_URL ?? 'http://127.0.0.1:4604'}/`}><UserMenuIcon name="operator" />平台运营</a>}
       </UserMenu></div>

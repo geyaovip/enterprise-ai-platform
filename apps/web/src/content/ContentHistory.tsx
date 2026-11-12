@@ -7,7 +7,6 @@ import {
   CompassIcon,
   IdentificationCardIcon,
   FrameCornersIcon,
-  ArrowsLeftRightIcon,
   CaretDownIcon,
   ImagesIcon,
 } from "@phosphor-icons/react";
@@ -183,7 +182,6 @@ export function ContentNavIcon({ path }: { path: string }) {
       {
         explore: CompassIcon,
         products: IdentificationCardIcon,
-        space: ArrowsLeftRightIcon,
         assets: ImagesIcon,
       } as Record<string, typeof SparkleIcon>
     )[path] ?? SparkleIcon;

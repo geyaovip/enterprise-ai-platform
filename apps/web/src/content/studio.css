@@ -185,25 +185,6 @@
   border: 0;
   font-size: 11px;
 }
-.sidebar .studio-space {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin: 0 16px 16px;
-  padding: 8px 10px;
-  min-height: 36px;
-  border-radius: 9px;
-  color: var(--muted);
-  background: var(--control-hover);
-  text-decoration: none;
-}
-.studio-space span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.studio-space svg { flex: none; }
 .studio-history-heading-actions {
   display: flex;
   align-items: center;
