@@ -10,6 +10,7 @@ import tarfile
 import tempfile
 import time
 import zipfile
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path, PurePosixPath
 from urllib.error import HTTPError
 from urllib.request import Request, urlopen
@@ -98,7 +99,11 @@ def current(target, bundle):
 
 
 def fetch(path, version):
-    request = Request(ORIGIN + path + "?release-check=" + version, headers={"Cache-Control": "no-cache"})
+    request = Request(ORIGIN + path + "?release-check=" + version, headers={
+        "User-Agent": "Mozilla/5.0 Chrome/140.0.0.0 Safari/537.36",
+        "Accept-Encoding": "identity",
+        "Cache-Control": "no-cache",
+    })
     with urlopen(request, timeout=20) as response:
         return response.read()
 
@@ -112,24 +117,28 @@ def asset_name(name):
 
 
 def retain_previous(target, baseline, dist, bootstrap, bootstrap_version):
-    try:
-        previous = json.loads(fetch(prefix(target) + "/release-info.json", baseline["version"]))
-    except HTTPError as error:
-        if error.code != 404:
-            raise
-        require(bootstrap and bootstrap_version == baseline["version"],
-                "First release needs the current asset manifest and matching --previous-version")
+    if bootstrap or bootstrap_version:
+        require(bootstrap and bootstrap_version == baseline["version"], "Bootstrap manifest must match the active Worker version")
         names = json.loads(bootstrap.read_text())
-        require(isinstance(names, list) and names, "Invalid previous asset manifest")
-        previous = {"assets": dict.fromkeys(names)}
-    assets = previous["assets"]
+        require(isinstance(names, list) and names and all(asset_name(name) for name in names),
+                "Invalid previous asset manifest")
+        assets = dict.fromkeys(names)
+    else:
+        try:
+            assets = json.loads(fetch(prefix(target) + "/release-info.json", baseline["version"]))["assets"]
+        except HTTPError as error:
+            if error.code != 404:
+                raise
+            raise RuntimeError("First release needs the current asset manifest and matching --previous-version") from error
     require(isinstance(assets, dict) and assets, "Missing previous asset inventory")
-    for name, expected in assets.items():
+
+    def retain(item):
+        name, expected = item
         require(asset_name(name), f"Invalid previous asset name: {name}")
         local = dist / "assets" / name
         if local.exists() and expected is not None:
             require(digest(local) == expected, f"Same asset name has different content: {name}")
-            continue
+            return
         body = fetch(prefix(target) + "/assets/" + name, baseline["version"])
         if expected is not None:
             require(hashlib.sha256(body).hexdigest() == expected, f"Previous asset digest mismatch: {name}")
@@ -137,6 +146,9 @@ def retain_previous(target, baseline, dist, bootstrap, bootstrap_version):
             require(local.read_bytes() == body, f"Same asset name has different content: {name}")
         else:
             local.write_bytes(body)
+
+    with ThreadPoolExecutor(max_workers=6) as pool:
+        list(pool.map(retain, assets.items()))
 
 
 def prepare(args):
