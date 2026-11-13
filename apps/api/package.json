@@ -35,6 +35,7 @@
     "test:auth-protection": "pnpm build && node tests/email-auth.cjs && node tests/auth-protection.cjs",
     "test:crm-unified": "pnpm build && node tests/crm-unified-flow.cjs && node tests/crm-legacy-preflight.cjs",
     "test:content": "pnpm build && node tests/content-provider.cjs && node tests/content-media.cjs && node tests/content-layout.cjs && node tests/content-studio.cjs && node tests/content-canvas.cjs && node tests/content-flow.cjs && node tests/content-daily-flow.cjs && node tests/content-ai.cjs",
+    "test:content-media-tools": "pnpm build && node tests/content-media-tools.cjs",
     "test:geo": "pnpm build && node tests/geo-native.cjs"
   },
   "dependencies": {

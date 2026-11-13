@@ -111,18 +111,20 @@ export class ContentCanvasService {
   }
   async list(c: RequestContext, raw: unknown) {
     const ctx = await this.host.guard(c);
-    const { page, q, days, sort, visibility } = readBody(
+    const { page, q, days, sort, visibility, projectId } = readBody(
       z.object({
         page: z.coerce.number().int().min(1).max(100000).default(1),
         q: z.string().max(100).default(""),
         days: z.enum(["7", "30", "90"]).optional(),
         sort: z.enum(["newest", "oldest", "name"]).default("newest"),
         visibility: z.enum(["private", "tenant"]).optional(),
+        projectId: id.optional(),
       }),
       raw,
     );
     const where = {
       tenantId: c.tenantId,
+      ...(projectId ? { projectId } : {}),
       ...(days
         ? {
             updatedAt: {

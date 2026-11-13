@@ -9,6 +9,7 @@ import {
   FrameCornersIcon,
   CaretDownIcon,
   ImagesIcon,
+  ToolboxIcon,
 } from "@phosphor-icons/react";
 import { tenantApi } from "../api";
 import { useApiData } from "../hooks";
@@ -131,14 +132,14 @@ export function ContentHistory({
           <div className="studio-history-heading-actions">
             <Link
               className="studio-history-all"
-              to={path + "/assets/canvases"}
+              to={path + "/canvas"}
               aria-label="全部画布"
             >
               全部
             </Link>
             {canCreate && (
               <Link
-                to={path + "/assets/canvases?new=1"}
+                to={path + "/canvas?new=1"}
                 aria-label="新建画布"
                 title="新建画布"
               >
@@ -183,6 +184,7 @@ export function ContentNavIcon({ path }: { path: string }) {
         explore: CompassIcon,
         products: IdentificationCardIcon,
         assets: ImagesIcon,
+        tools: ToolboxIcon,
       } as Record<string, typeof SparkleIcon>
     )[path] ?? SparkleIcon;
   return <Icon size={19} aria-hidden="true" />;

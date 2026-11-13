@@ -3,12 +3,12 @@ import { Dialog, Notice } from "../components";
 import { api } from "../api";
 import { useAction, useContent } from "./content-ui";
 
-type FramePosition = "current" | "first" | "last";
+export type FramePosition = "current" | "first" | "last";
 const labels = { current: "当前帧", first: "首帧", last: "尾帧" };
 
 // Frame decoding and drawing adapted from Toonflow videoPlayer.vue, commit
 // af6e884c3d8cda353acaf8ef13aea8ea754a4afd, MIT. See third-party/Toonflow-LICENSE.
-async function frameData(
+export async function frameData(
   video: HTMLVideoElement,
   position: FramePosition,
   signal: AbortSignal,

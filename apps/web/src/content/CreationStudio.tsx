@@ -49,6 +49,8 @@ import {
 } from "./content-ui";
 import { ArtworkPreview } from "./ArtworkPreview";
 import { StudioDropdown } from "./StudioDropdown";
+import { FeaturedTools, GuidedFields, ToolBack } from "./ContentTools";
+import { toolPrompt, type GuidedMediaTool } from "./creation-tools";
 import {
   ReferenceAttachment,
   type ReferenceImage,
@@ -118,6 +120,7 @@ type Draft = {
   picture?: PictureOptions;
   mode?: MediaMode;
   video?: { prompt: string; frame?: ReferenceImage; options: ClipOptions };
+  toolValues?: string[];
 };
 const blank: Draft = { prompt: "", size: "square", brandId: "" };
 function readDraft(storageKey: string): Draft {
@@ -222,29 +225,30 @@ export function ContentExplore() {
   );
 }
 
-export function CreationStudio() {
+export function CreationStudio({ tool }: { tool?: GuidedMediaTool } = {}) {
   const { id = "" } = useParams();
-  return <StudioScreen key={id} id={id} />;
+  return <StudioScreen key={id || tool?.id || "new"} id={id} tool={tool} />;
 }
-function StudioScreen({ id }: { id: string }) {
+function StudioScreen({ id, tool }: { id: string; tool?: GuidedMediaTool }) {
   const c = useContent(),
     nav = useNavigate(),
     action = useAction(),
     upload = useAction();
   const storageScope = c.prefix + ":" + c.meta.membershipId;
-  const draftKey = storageScope + ":draft:" + (id || "new");
+  const draftKey = storageScope + ":draft:" + (id || (tool ? "tool:" + tool.id : "new"));
   const [draft, setDraft] = useState<Draft>(() => readDraft(draftKey));
-  const mode = draft.mode === "video" ? "video" : "image";
+  const mode = tool?.media.mode ?? (draft.mode === "video" ? "video" : "image");
   const imageMode = mode === "image";
   const video = draft.video ?? { prompt: "", options: clipDefaults };
   const picture = constrainPicture(
-    draft.picture ?? { ...pictureDefaults, ratio: legacyRatios[draft.size] },
+    draft.picture ?? { ...pictureDefaults, ratio: tool?.media.ratio ?? legacyRatios[draft.size] },
     c.meta.model.imageOptions,
   );
   const references = [draft.reference, ...(draft.extraReferences ?? [])].filter(
     (r): r is ReferenceImage => !!r,
   );
-  const prompt = imageMode ? draft.prompt : video.prompt;
+  const toolValues = draft.toolValues ?? [];
+  const prompt = tool ? toolPrompt(tool, toolValues) : imageMode ? draft.prompt : video.prompt;
   const modelReady = imageMode
     ? c.meta.model.configured
     : c.meta.model.videoConfigured;
@@ -297,7 +301,7 @@ function StudioScreen({ id }: { id: string }) {
     uploadInput = useRef<HTMLInputElement>(null),
     resultEnd = useRef<HTMLDivElement>(null);
   const project = useApiData<any>(id ? c.base + "/projects/" + id : null);
-  useEffect(() => { document.title = `${id ? project.data?.name ?? "创作记录" : imageMode ? "图片创作" : "视频创作"} · 知行方舟`; }, [id, project.data?.name, imageMode]);
+  useEffect(() => { document.title = `${tool?.name ?? (id ? project.data?.name ?? "创作记录" : imageMode ? "图片创作" : "视频创作")} · 知行方舟`; }, [tool?.name, id, project.data?.name, imageMode]);
   const arts = useApiData<any>(
     id ? c.base + `/projects/${id}/artifacts?page=${artPage}` : null,
   );
@@ -316,7 +320,12 @@ function StudioScreen({ id }: { id: string }) {
   const pending = action.busy || upload.busy;
   const canAttach = canCreate && (!imageMode || references.length < maxReferences);
   const inputReferences = imageMode ? references : video.frame ? [video.frame] : [];
-  const uploadLabel = !imageMode && video.frame ? "更换参考图" : "添加参考图";
+  const requiredReference = tool?.media.requiresReference ? (imageMode ? "商品原图" : "首帧图片") : "";
+  const uploadLabel = !imageMode && video.frame ? "更换参考图" : requiredReference ? "添加" + requiredReference : "添加参考图";
+  const readyToSubmit = tool
+    ? tool.fields.every((field, index) => field.optional || toolValues[index]?.trim()) &&
+      (!tool.media.requiresReference || inputReferences.length > 0)
+    : !!prompt.trim();
   const patch = (v: Partial<Draft>) => setDraft((d) => ({ ...d, ...v }));
   const changeMode = (value: MediaMode | "assistant") => {
     if (value === "assistant") {
@@ -441,6 +450,7 @@ function StudioScreen({ id }: { id: string }) {
         }
       }
       sessionStorage.removeItem(storageScope + ":outbox");
+      if (saved.toolId) sessionStorage.removeItem(storageScope + ":draft:tool:" + saved.toolId);
       setUncertain(false);
       setFeedback("原提交已恢复");
       nav(c.prefix + "/projects/" + saved.projectId);
@@ -450,7 +460,7 @@ function StudioScreen({ id }: { id: string }) {
   const submit = (e: FormEvent) => {
     e.preventDefault();
     if (
-      !prompt.trim() ||
+      !readyToSubmit ||
       !modelReady ||
       pending ||
       uncertain ||
@@ -468,7 +478,7 @@ function StudioScreen({ id }: { id: string }) {
         throw Error("请重新选择品牌，以确认品牌版本");
       if (!p) {
         p = await api.post<any>(c.base + "/projects", {
-          name: prompt.trim().slice(0, 40),
+          name: (tool ? tool.name + " · " + toolValues[0].trim() : prompt.trim()).slice(0, 40),
           visibility: "private",
           participants: [],
           brief: {
@@ -520,6 +530,7 @@ function StudioScreen({ id }: { id: string }) {
           projectId: p.id,
           requestKey: submission.requestKey,
           submission,
+          ...(tool ? { toolId: tool.id } : {}),
         }),
       );
       try {
@@ -537,7 +548,8 @@ function StudioScreen({ id }: { id: string }) {
         throw error;
       }
       sessionStorage.removeItem(storageScope + ":outbox");
-      if (imageMode)
+      if (tool) sessionStorage.removeItem(draftKey);
+      else if (imageMode)
         patch({
           prompt: "",
           reference: undefined,
@@ -555,12 +567,17 @@ function StudioScreen({ id }: { id: string }) {
             imageMode
               ? {
                   ...draft,
+                  ...(tool ? { mode, picture, toolValues: undefined } : {}),
                   prompt: "",
                   reference: undefined,
                   extraReferences: [],
                   region: undefined,
                 }
-              : { ...draft, video: { ...video, prompt: "" } },
+              : {
+                  ...draft,
+                  ...(tool ? { mode, toolValues: undefined } : {}),
+                  video: { ...video, prompt: "" },
+                },
           ),
         );
         nav(c.prefix + "/projects/" + p.id);
@@ -729,7 +746,7 @@ function StudioScreen({ id }: { id: string }) {
     <div
       className={"creation-studio " + (hasResults ? "has-results" : "is-empty")}
     >
-      {!hasResults && <CreativeTabs mode="generate" />}
+      {!hasResults && (tool ? <div className="content-guided-back"><ToolBack /></div> : <CreativeTabs mode="generate" />)}
       {hasResults && (
         <header className="studio-topline">
           <div>
@@ -1009,8 +1026,9 @@ function StudioScreen({ id }: { id: string }) {
           <div ref={resultEnd} />
         </div>
       ) : (
-        <section className="studio-welcome">
-          <h1>{imageMode ? "图片创作" : "视频创作"}</h1>
+        <section className={tool ? "studio-welcome studio-guided-welcome" : "studio-welcome"}>
+          <h1>{tool?.name ?? (imageMode ? "图片创作" : "视频创作")}</h1>
+          {tool && <p>{tool.description}</p>}
         </section>
       )}
       <section className="studio-composer-wrap" aria-label="创作输入">
@@ -1029,7 +1047,12 @@ function StudioScreen({ id }: { id: string }) {
           </div>
         )}
         <form className="studio-composer" onSubmit={submit}>
-          <div className="studio-composer-input">
+          <div className={"studio-composer-input" + (tool ? " studio-guided-input" : "")}>
+            {tool && (canAttach || inputReferences.length > 0) && (
+              <span className="content-guided-reference-label">
+                {requiredReference ? requiredReference + " *" : "参考图（选填）"}
+              </span>
+            )}
             {(canAttach || inputReferences.length > 0) && (
               <div className="studio-input-references">
                 {inputReferences.map((image, index) => (
@@ -1094,7 +1117,9 @@ function StudioScreen({ id }: { id: string }) {
                 )}
               </div>
             )}
-            <textarea
+            {tool ? <GuidedFields tool={tool} values={toolValues}
+              setValues={(toolValues) => patch({ toolValues })} disabled={pending || !canGenerate} />
+            : <textarea
               ref={input}
               aria-label="创作需求"
               maxLength={2000}
@@ -1122,7 +1147,7 @@ function StudioScreen({ id }: { id: string }) {
                   e.currentTarget.form?.requestSubmit();
                 }
               }}
-            />
+            />}
           </div>
           {imageMode && activeRegion && draft.reference && (
             <div className="studio-region-controls">
@@ -1145,7 +1170,7 @@ function StudioScreen({ id }: { id: string }) {
           <div className={id ? "studio-composer-tools" : "studio-composer-tools studio-home-toolbar"}>
             {!id ? (
               <div className="studio-parameters">
-                <StudioDropdown
+                {!tool && <StudioDropdown
                   label="创作类型"
                   summary={imageMode ? "图片生成" : "视频生成"}
                   icon={imageMode
@@ -1171,7 +1196,7 @@ function StudioScreen({ id }: { id: string }) {
                         {mode === value && <CheckIcon size={16} aria-hidden="true" />}
                       </button>
                     ))}
-                </StudioDropdown>
+                </StudioDropdown>}
                 <StudioDropdown
                   label="企业模型"
                   summary={modelReady ? modelSummary : "模型未配置"}
@@ -1227,7 +1252,7 @@ function StudioScreen({ id }: { id: string }) {
               type="submit"
               className="studio-submit"
               disabled={
-                !prompt.trim() ||
+                !readyToSubmit ||
                 pending ||
                 uncertain ||
                 !canGenerate ||
@@ -1339,33 +1364,8 @@ function StudioScreen({ id }: { id: string }) {
           </p>
         )}
       </section>
-      {!hasResults && (
-        <section className="studio-examples" aria-label="创作灵感">
-          <div className="studio-examples-heading">
-            <h2>创作灵感</h2>
-            <button type="button" disabled={pending || !canCreate} onClick={() => setSkillsOpen(true)}>
-              提示词模板
-            </button>
-          </div>
-          <div>
-            {(mode === "video" ? videoExamples : examples).map((example) => (
-              <button
-                key={example.title}
-                aria-label={"使用示例：" + example.title}
-                disabled={pending || !canCreate}
-                onClick={() => {
-                  if (mode === "video")
-                    patch({ video: { ...video, prompt: example.prompt } });
-                  else patch({ mode: "image", prompt: example.prompt });
-                  input.current?.focus();
-                }}
-              >
-                <strong>{example.title}</strong>
-                <PencilSimpleIcon size={18} aria-hidden="true" />
-              </button>
-            ))}
-          </div>
-        </section>
+      {!hasResults && !tool && (
+        <FeaturedTools onTemplates={() => setSkillsOpen(true)} canUseTemplates={!pending && canCreate} />
       )}
       <Dialog
         open={attachOpen}

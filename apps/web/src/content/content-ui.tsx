@@ -21,6 +21,7 @@ const labels: Record<string, string> = {
   reserved: "费用待确认",
   released: "未消耗",
   unknown: "费用待核实",
+  usage_unknown_cost_pending: "用量及账单待核对",
   usage_reported_cost_pending: "账单待核对",
   hero: "主视觉",
   split: "左右分栏",

@@ -72,11 +72,6 @@
   background: var(--surface);
   color: var(--text);
 }
-.content-shell .sidebar .tenant-label {
-  background: transparent;
-  color: var(--muted);
-  border: 0;
-}
 .content-shell .sidebar .user-menu-trigger {
   background: transparent;
   color: var(--text);
@@ -869,64 +864,6 @@
   color: var(--warning);
   border-color: var(--warning-border);
 }
-.studio-examples {
-  width: min(850px, 100%);
-  margin: 46px 0 24px;
-}
-.studio-examples-heading {
-  display: flex;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 16px;
-}
-.studio-examples-heading > button {
-  background: transparent;
-  border-color: transparent;
-  color: var(--brand);
-  min-height: 34px;
-  padding: 4px 0;
-  font-size: 13px;
-}
-.studio-examples-heading > button:hover:not(:disabled) {
-  border-color: transparent;
-  text-decoration: underline;
-}
-.studio-examples h2 {
-  font-size: 14px;
-  font-weight: 500;
-  margin: 0;
-}
-.studio-examples > div:last-child {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14px;
-}
-.studio-examples > div:last-child > button {
-  display: block;
-  text-align: left;
-  position: relative;
-  padding: 22px 20px;
-  color: var(--text);
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface);
-  min-width: 0;
-  min-height: 72px;
-}
-.studio-examples > div:last-child > button:hover {
-  border-color: var(--brand);
-  background: var(--control-hover);
-}
-.studio-examples strong {
-  font-size: 15px;
-  font-weight: 500;
-}
-.studio-examples > div:last-child > button > svg {
-  position: absolute;
-  right: 16px;
-  top: 20px;
-  color: var(--hint);
-}
 .creation-studio.has-results {
   height: calc(100dvh - 64px);
   min-height: 0;
@@ -1252,17 +1189,7 @@
     gap: 6px;
     font-size: 11px;
   }
-  .studio-examples {
-    margin-top: 30px;
-  }
-  .studio-examples > div:last-child {
-    grid-template-columns: 1fr;
-    gap: 10px;
-  }
-  .studio-examples > div:last-child > button {
-    min-height: 64px;
-    padding: 16px;
-  }
+
   .studio-result-image {
     max-height: 450px;
   }

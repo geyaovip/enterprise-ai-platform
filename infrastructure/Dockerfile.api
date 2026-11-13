@@ -15,7 +15,7 @@ RUN NODE_OPTIONS=--max-old-space-size=1536 DATABASE_URL=postgresql://build:build
 
 FROM node:24.21.0-bookworm-slim@sha256:0e0ff40c39bc087845bfb27465a0df4ea419520094bc35842ff83dd8cbe6f9b6
 WORKDIR /app
-RUN apt-get update && apt-get install -y --no-install-recommends openssl python3 python3-pil python3-reportlab fonts-noto-cjk python3-xlrd python3-olefile python3-opencv poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends openssl python3 python3-pil python3-reportlab fonts-noto-cjk python3-xlrd python3-olefile python3-opencv ffmpeg poppler-utils tesseract-ocr tesseract-ocr-eng tesseract-ocr-chi-sim && rm -rf /var/lib/apt/lists/*
 RUN corepack enable && corepack prepare pnpm@11.19.0 --activate
 COPY --from=build /app /app
 ENV NODE_ENV=production

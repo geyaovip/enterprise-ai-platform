@@ -606,3 +606,18 @@
 .media-ratios button span { display: inline-block; border: 1px solid currentColor; border-radius: 2px; }
 
 .brand-content .canvas-model-status { margin: 8px 0 0; font-size: 12px; color: var(--muted); }
+
+.canvas-home-projects {
+  width: min(960px, 100%);
+  margin: clamp(22px, 5vh, 54px) auto 30px;
+}
+.canvas-home-projects > header h1 {
+  margin: 0;
+  font-size: clamp(22px, 3vw, 30px);
+}
+.canvas-home-projects > input {
+  width: min(100%, 300px);
+}
+.canvas-home-projects .canvas-empty {
+  color: var(--muted);
+}

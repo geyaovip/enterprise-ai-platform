@@ -21,6 +21,7 @@ import {
 } from "react";
 import {
   Link,
+  useLocation,
   useNavigate,
   useParams,
   useSearchParams,
@@ -118,8 +119,7 @@ export function CanvasList() {
     [selecting, setSelecting] = useState(false),
     [selected, setSelected] = useState<string[]>([]),
     [copied, setCopied] = useState(false),
-    [open, setOpen] = useState(false),
-    [name, setName] = useState("");
+    [open, setOpen] = useState(false);
   const rows = useApiData<{
     items: { id: string; updatedAt: string; project: { name: string } }[];
     total: number;
@@ -283,10 +283,7 @@ export function CanvasList() {
               <button
                 type="button"
                 className="canvas-card canvas-create-card"
-                onClick={() => {
-                  setName("");
-                  setOpen(true);
-                }}
+                onClick={() => setOpen(true)}
               >
                 <span className="canvas-card-cover" aria-hidden="true">
                   <PlusIcon size={30} />
@@ -325,6 +322,7 @@ export function CanvasList() {
                   ) : (
                     <Link
                       to={c.prefix + "/canvases/" + board.id}
+                      state={{ fromAssetLibrary: true }}
                       className="canvas-card"
                     >
                       {contents}
@@ -349,40 +347,102 @@ export function CanvasList() {
           )}
           <Pager result={rows} page={page} setPage={resetList} />
         </Result>
-        <Dialog
-          open={canCreate && (open || requested)}
-          title="新建画布"
-          onClose={close}
-        >
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              void action.run(async () => {
-                const b = await api.post<any>(c.base + "/canvases", {
-                  name: name.trim(),
-                });
-                window.dispatchEvent(new Event("content-projects-changed"));
-                nav(c.prefix + "/canvases/" + b.id, { replace: requested });
-              });
-            }}
-          >
-            <Field label="画布名称">
-              <input
-                autoFocus
-                required
-                maxLength={100}
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-              />
-            </Field>
-            <Notice text={action.error} />
-            <button className="primary" disabled={action.busy || !name.trim()}>
-              创建画布
-            </button>
-          </form>
-        </Dialog>
+        {canCreate && (open || requested) && (
+          <NewCanvasDialog onClose={close} onCreated={(id) =>
+            nav(c.prefix + "/canvases/" + id, {
+              replace: requested,
+              state: { fromAssetLibrary: true },
+            })
+          } />
+        )}
       </div>
     </>
+  );
+}
+
+function NewCanvasDialog({
+  onClose,
+  onCreated,
+}: {
+  onClose: () => void;
+  onCreated: (id: string) => void;
+}) {
+  const { base } = useContent();
+  const action = useAction();
+  const [name, setName] = useState("");
+  return (
+    <Dialog open title="新建画布" busy={action.busy} onClose={onClose}>
+      <form onSubmit={(event) => {
+        event.preventDefault();
+        if (!name.trim()) return;
+        void action.run(async () => {
+          const board = await api.post<{ id: string }>(base + "/canvases", { name: name.trim() });
+          window.dispatchEvent(new Event("content-projects-changed"));
+          onCreated(board.id);
+        });
+      }}>
+        <Field label="画布名称">
+          <input autoFocus required maxLength={100} value={name}
+            disabled={action.busy} onChange={(event) => setName(event.target.value)} />
+        </Field>
+        <Notice text={action.error} />
+        <button className="primary" disabled={action.busy || !name.trim()}>
+          创建画布
+        </button>
+      </form>
+    </Dialog>
+  );
+}
+
+export function CanvasHome() {
+  const { base, prefix, meta } = useContent();
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  const [page, setPage] = useState(1);
+  const [query, setQuery] = useState("");
+  const rows = useApiData<{
+    items: { id: string; updatedAt: string; project: { name: string } }[];
+    total: number;
+  }>(base + `/canvases?page=${page}&q=${encodeURIComponent(query.trim())}`);
+  const requested = params.get("new") === "1";
+  useEffect(() => { document.title = "创作画布 · 知行方舟"; }, []);
+  return (
+    <div className="creation-studio canvas-home">
+      <CreativeTabs mode="canvas" />
+      <section className="canvas-home-projects" aria-labelledby="canvas-home-title">
+        <header>
+          <h1 id="canvas-home-title">创作画布</h1>
+          {meta.permissions.includes("content.create") && (
+            <button className="primary" onClick={() => setParams({ new: "1" }, { replace: true })}>
+              <PlusIcon size={18} aria-hidden="true" /> 新建画布
+            </button>
+          )}
+        </header>
+        <input type="search" aria-label="搜索画布" placeholder="搜索画布"
+          maxLength={100} value={query} onChange={(event) => {
+            setQuery(event.target.value);
+            setPage(1);
+          }} />
+        <Result result={rows}>
+          {rows.data?.items.length ? (
+            <div className="canvas-cards">
+              {rows.data.items.map((board) => (
+                <Link key={board.id} to={prefix + "/canvases/" + board.id} className="canvas-card">
+                  <span className="canvas-card-cover" aria-hidden="true"><ArrowsOutIcon size={30} /></span>
+                  <strong>{board.project.name}</strong>
+                  <time dateTime={board.updatedAt}>{new Date(board.updatedAt).toLocaleDateString("zh-CN")}</time>
+                </Link>
+              ))}
+            </div>
+          ) : <p className="canvas-empty">{query.trim() ? "未找到画布" : "暂无画布"}</p>}
+          <Pager result={rows} page={page} setPage={setPage} />
+        </Result>
+      </section>
+      {requested && meta.permissions.includes("content.create") && (
+        <NewCanvasDialog onClose={() => setParams({}, { replace: true })}
+          onCreated={(id) => navigate(prefix + "/canvases/" + id, { replace: true })} />
+      )}
+    </div>
   );
 }
 
@@ -439,6 +499,7 @@ export function ContentCanvas() {
   return <CanvasWorkspace key={id} id={id} />;
 }
 function CanvasWorkspace({ id }: { id: string }) {
+  const fromAssetLibrary = useLocation().state?.fromAssetLibrary === true;
   const c = useContent(),
     nav = useNavigate(),
     action = useAction(),
@@ -878,7 +939,7 @@ function CanvasWorkspace({ id }: { id: string }) {
     <div className="creation-studio canvas-workspace">
       <header className="canvas-header">
         <div>
-          <Link to={c.prefix + "/assets/canvases"} aria-label="返回画布列表">
+          <Link to={c.prefix + (fromAssetLibrary ? "/assets/canvases" : "/canvas")} aria-label="返回画布列表">
             <ArrowLeftIcon size={19} />
           </Link>
           <h1>{board.project.name}</h1>
@@ -1824,7 +1885,7 @@ function CanvasWorkspace({ id }: { id: string }) {
             await draft.flush();
             await api.del(c.base + "/projects/" + board.projectId);
             window.dispatchEvent(new Event("content-projects-changed"));
-            nav(c.prefix + "/assets/canvases");
+            nav(c.prefix + (fromAssetLibrary ? "/assets/canvases" : "/canvas"));
           })
         }
       />

@@ -50,6 +50,7 @@ const J = json;
 const videoMetric = "content.video";
 const imageMetric = "content.image";
 const contentMediaMetrics = { in: [imageMetric, videoMetric] };
+const billableMediaMetrics = { in: [...contentMediaMetrics.in, "content.media.face", "content.media.lips", "content.media.asr", "content.media.voice"] };
 const metricFor = (mode: string) =>
   mode === "video" ? videoMetric : imageMetric;
 const uuid = (v: string) => readBody(id, v);
@@ -2525,7 +2526,7 @@ export class ContentService {
       where: {
         id: uuid(usageId),
         tenantId: c.tenantId,
-        metric: contentMediaMetrics,
+        metric: billableMediaMetrics,
         status: {
           in: [
             "usage_reported_cost_pending",
@@ -2567,7 +2568,7 @@ export class ContentService {
   async usage(c: RequestContext, query?: unknown) {
     await this.guard(c, "content.manage");
     const q = readBody(pageInput, query ?? {}),
-      where = { tenantId: c.tenantId, metric: contentMediaMetrics };
+      where = { tenantId: c.tenantId, metric: billableMediaMetrics };
     const items = await this.db.usageRecord.findMany({
       where,
       orderBy: [{ createdAt: "desc" }, { id: "desc" }],

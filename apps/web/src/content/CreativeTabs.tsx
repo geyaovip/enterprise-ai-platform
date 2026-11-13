@@ -23,17 +23,19 @@ export function CreativeTabs({
         >
           生成
         </Link>
-        {projectId &&
-        mode === "generate" &&
-        c.meta.permissions.includes("content.create") ? (
+        {projectId && mode === "generate" ? (
           <button
             disabled={action.busy}
             onClick={() =>
               void action.run(async () => {
-                const board = await api.post<any>(c.base + "/canvases", {
-                  projectId,
-                });
-                window.dispatchEvent(new Event("content-projects-changed"));
+                const canCreate = c.meta.permissions.includes("content.create");
+                const board = canCreate
+                  ? await api.post<{ id: string }>(c.base + "/canvases", { projectId })
+                  : (await api.get<{ items: { id: string; project: { id: string } }[] }>(
+                      c.base + "/canvases?projectId=" + encodeURIComponent(projectId),
+                    )).items.find((item) => item.project.id === projectId);
+                if (!board) throw Error("此创作记录暂无画布");
+                if (canCreate) window.dispatchEvent(new Event("content-projects-changed"));
                 nav(c.prefix + "/canvases/" + board.id);
               })
             }
@@ -44,7 +46,7 @@ export function CreativeTabs({
           <Link
             to={
               c.prefix +
-              (canvasId ? "/canvases/" + canvasId : "/assets/canvases")
+              (canvasId ? "/canvases/" + canvasId : "/canvas")
             }
             aria-current={mode === "canvas" ? "page" : undefined}
           >

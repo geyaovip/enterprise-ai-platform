@@ -51,7 +51,9 @@ import {
 } from "../components";
 import "./content.css";
 import { ContentExplore, CreationStudio } from "./CreationStudio";
-import { CanvasList, ContentCanvas, putImageOnCanvas } from "./ContentCanvas";
+import { CanvasHome, CanvasList, ContentCanvas, putImageOnCanvas } from "./ContentCanvas";
+import { ContentTools, StandaloneTool } from "./ContentTools";
+import { creationTools } from "./creation-tools";
 import { saveReferenceDraft } from "./ReferenceAttachment";
 import { VideoFrameDialog } from "./VideoFrameDialog";
 import { ImageToolsDialog } from "./ImageToolsDialog";
@@ -132,11 +134,14 @@ export function ContentPage({
           {meta.data && (
             <Routes>
               <Route index element={<CreationStudio />} />
+              <Route path="canvas" element={<CanvasHome />} />
               <Route path="canvases" element={<LegacyCanvasList />} />
               <Route path="canvases/:id" element={<ContentCanvas />} />
               <Route path="projects/:id" element={<ProjectEntry />} />
               <Route path="projects/:id/manage" element={<Project />} />
               <Route path="explore" element={<ContentExplore />} />
+              <Route path="tools" element={<ContentTools />} />
+              <Route path="tools/:toolId" element={<ContentToolPage />} />
               <Route path="brands" element={<Documents kind="brand" />} />
               <Route path="products" element={<Documents kind="product" />} />
               <Route path="assets" element={<Assets />} />
@@ -153,6 +158,14 @@ export function ContentPage({
       </div>
     </Context.Provider>
   );
+}
+
+function ContentToolPage() {
+  const { toolId } = useParams();
+  const tool = creationTools.find((item) => item.id === toolId);
+  if (!tool) return <Empty text="找不到此创作工具" />;
+  if ("media" in tool) return <CreationStudio key={tool.id} tool={tool} />;
+  return <StandaloneTool key={tool.id} tool={tool} />;
 }
 const freshBrief = {
   brandId: "",
@@ -2062,6 +2075,15 @@ function Trash() {
     </>
   );
 }
+const contentUsageMetrics: Record<string, [string, string]> = {
+  "content.image": ["图片生成", "张"],
+  "content.video": ["视频生成", "秒"],
+  "content.media.face": ["视频换脸", "秒"],
+  "content.media.lips": ["口型对齐", "秒"],
+  "content.media.asr": ["自动字幕", "秒"],
+  "content.media.voice": ["文字配音", "字"],
+};
+
 function Settings() {
   const c = useContent(),
     a = useAction(),
@@ -2202,18 +2224,19 @@ function Settings() {
         </Result>
       </section>
       <section className="panel">
-        <h2>最近生成用量</h2>
+        <h2>创作用量</h2>
         <Result result={usage}>
           <Pager
             result={usage.pagination}
             page={usagePage}
             setPage={setUsagePage}
           />
-          {usage.data?.length === 0 && <Empty text="还没有生成用量" />}
+          {usage.data?.length === 0 && <Empty text="还没有创作用量" />}
           {usage.data?.map((x) => (
             <div key={x.id} className="content-task-row">
               <span>
-                {new Date(x.createdAt).toLocaleString()} · {x.quantity} 张
+                {new Date(x.createdAt).toLocaleString()} · {contentUsageMetrics[x.metric]?.[0] ?? "创作"}
+                {x.status !== "usage_unknown_cost_pending" && " · " + x.quantity + " " + (contentUsageMetrics[x.metric]?.[1] ?? "")}
               </span>
               <span>
                 {status(x.status)}

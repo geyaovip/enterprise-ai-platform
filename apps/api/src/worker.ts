@@ -2,6 +2,7 @@ import {GeoWorker} from './modules/geo/geo.worker';
 import { channelProviders } from './modules/platform/channel-registration';
 import { ChannelService } from './modules/platform/channel.service';
 import { ContentService } from './modules/content/content.service';
+import { ContentMediaToolsService } from './modules/content/content-media-tools.service';
 import {CrmMetricsService} from './modules/crm/metrics.service';
 import {CrmImportService} from './modules/crm/import.service';
 import { AiMemoryService } from './modules/ai/ai-memory.service';
@@ -108,6 +109,7 @@ async function main() {
     {name:'geo_analysis',interval:1000,deadline:180000,run:()=>app.get(GeoWorker).tick()},
     {name:'geo_monitoring',interval:30000,deadline:180000,run:()=>app.get(GeoWorker).schedules()},
     {name:'content_generation',interval:1000,deadline:360000,run:()=>app.get(ContentService).tick()},
+    {name:'content_media_tools',interval:1000,deadline:450000,run:()=>app.get(ContentMediaToolsService).tick()},
     {name:'content_exports',interval:1000,deadline:180000,run:()=>app.get(ContentService).delivery.tick()},
     {name:'content_retention',interval:3600000,deadline:120000,run:()=>app.get(ContentService).cleanup()},
     {name:'bom_vision',interval:1000,deadline:900000,run:()=>app.get(BomVisionService).tick()},
