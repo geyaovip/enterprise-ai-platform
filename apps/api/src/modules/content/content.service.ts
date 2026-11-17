@@ -21,6 +21,7 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { PrismaService } from "../prisma.service";
+import type { Prisma } from "../../generated/prisma/client";
 import { AuthService } from "../platform/auth.service";
 import type { RequestContext } from "../platform/context";
 import { readBody } from "../platform/security";
@@ -431,9 +432,9 @@ export class ContentService {
           ],
     };
   }
-  async project(c: RequestContext, projectId: string, write = false) {
+  async project(c: RequestContext, projectId: string, write = false, tx: Prisma.TransactionClient = this.db) {
     const ctx = await this.guard(c, write ? "content.create" : "content.read");
-    const p = await this.db.contentProject.findFirst({
+    const p = await tx.contentProject.findFirst({
       where: { ...this.projectWhere(ctx), id: uuid(projectId) },
     });
     if (!p) throw new NotFoundException("项目不存在或无权访问");
@@ -500,11 +501,11 @@ export class ContentService {
         throw new BadRequestException("内容包含品牌禁用词：" + word);
     return { brand, products };
   }
-  async saveProject(c: RequestContext, raw: unknown, projectId?: string) {
+  async saveProject(c: RequestContext, raw: unknown, projectId?: string, tx: Prisma.TransactionClient = this.db) {
     await this.guard(c, "content.create");
     const v = readBody(projectInput, raw);
     await this.validateBrief(c, v.brief);
-    const members = await this.db.membership.count({
+    const members = await tx.membership.count({
       where: {
         tenantId: c.tenantId,
         id: { in: [...new Set(v.participants)] },
@@ -514,7 +515,7 @@ export class ContentService {
     if (members !== new Set(v.participants).size)
       throw new BadRequestException("参与人不属于当前企业");
     if (projectId) {
-      const p = await this.project(c, projectId, true);
+      const p = await this.project(c, projectId, true, tx);
       if (
         p.ownerId !== c.membershipId &&
         !c.permissions.includes("content.manage") &&
@@ -522,8 +523,8 @@ export class ContentService {
           JSON.stringify(p.participants) !== JSON.stringify(v.participants))
       )
         throw new ForbiddenException("仅项目负责人可修改共享范围");
-      const changed = await this.db.contentProject.updateMany({
-        where: { id: p.id, tenantId: c.tenantId, version: v.version },
+      const changed = await tx.contentProject.updateMany({
+        where: { id: p.id, tenantId: c.tenantId, deletedAt: null, version: v.version },
         data: {
           name: v.name,
           brief: J(v.brief),
@@ -533,10 +534,10 @@ export class ContentService {
         },
       });
       if (!changed.count) throw new ConflictException("项目已修改，请刷新");
-      await this.audit(this.db, c, "project.save", p.id);
-      return this.project(c, p.id);
+      await this.audit(tx, c, "project.save", p.id);
+      return this.project(c, p.id, false, tx);
     }
-    const p = await this.db.contentProject.create({
+    const p = await tx.contentProject.create({
       data: {
         tenantId: c.tenantId,
         ownerId: c.membershipId,
@@ -546,28 +547,29 @@ export class ContentService {
         participants: v.participants,
       },
     });
-    await this.audit(this.db, c, "project.create", p.id);
+    await this.audit(tx, c, "project.create", p.id);
     return p;
   }
-  async trashProject(c: RequestContext, projectId: string, restore = false) {
+  async trashProject(c: RequestContext, projectId: string, restore = false, external?: Prisma.TransactionClient, expectedVersion?: number) {
     await this.guard(c, "content.create");
-    const p = await this.db.contentProject.findFirst({
-      where: { id: uuid(projectId), tenantId: c.tenantId },
-    });
-    if (
-      !p ||
-      (p.ownerId !== c.membershipId &&
-        !c.permissions.includes("content.manage"))
-    )
-      throw new NotFoundException();
-    await this.db.$transaction(async (tx) => {
-      await tx.contentProject.update({
-        where: { id: p.id },
+    const trash = async (tx: Prisma.TransactionClient) => {
+      const p = await tx.contentProject.findFirst({
+        where: { id: uuid(projectId), tenantId: c.tenantId },
+      });
+      if (
+        !p ||
+        (p.ownerId !== c.membershipId &&
+          !c.permissions.includes("content.manage"))
+      )
+        throw new NotFoundException();
+      const changed = await tx.contentProject.updateMany({
+        where: { id: p.id, tenantId: c.tenantId, ...(expectedVersion === undefined ? {} : { version: expectedVersion, deletedAt: null }) },
         data: {
           deletedAt: restore ? null : new Date(),
           version: { increment: 1 },
         },
       });
+      if (!changed.count) throw new ConflictException("项目已修改，请刷新");
       if (!restore)
         await tx.contentGenerationItem.updateMany({
           where: {
@@ -583,8 +585,9 @@ export class ContentService {
         restore ? "project.restore" : "project.trash",
         p.id,
       );
-    });
-    return { ok: true };
+      return { ok: true };
+    };
+    return external ? trash(external) : this.db.$transaction(trash);
   }
   async trash(c: RequestContext, query?: unknown) {
     const ctx = await this.guard(c, "content.create");

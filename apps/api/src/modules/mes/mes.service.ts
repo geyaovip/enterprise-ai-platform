@@ -929,7 +929,7 @@ export class MesService {
       external,
     );
   }
-  async planAction(c: RequestContext, id: string, raw: unknown) {
+  async planAction(c: RequestContext, id: string, raw: unknown, external?: Db) {
     const i = parse(
       mutation.extend({ action: z.enum(["release", "cancel"]) }).strict(),
       raw,
@@ -973,6 +973,7 @@ export class MesService {
         await this.audit(tx, c, "plan." + i.action, "plan", id);
         return r;
       },
+      external,
     );
   }
   async createOrder(c: RequestContext, id: string, raw: unknown) {

@@ -41,6 +41,42 @@ export class PurchaseService {
     return item;
   }
 
+  async connectorDraft(tx: Prisma.TransactionClient, ctx: RequestContext, id: string, version: number) {
+    this.auth.require(ctx, 'erp.purchase.write');
+    const order = await tx.erpPurchaseOrder.findFirst({
+      where: { id, tenantId: ctx.tenantId, createdByMembershipId: ctx.membershipId },
+      include: { lines: { orderBy: { sku: 'asc' } }, supplier: { select: { name: true } } },
+    });
+    if (!order) failNotFound('本人创建的采购草稿');
+    if (order.status !== 'draft' || order.version !== version) conflict('采购草稿已变化或已提交');
+    if (await tx.manufacturingPurchase.findFirst({ where: { purchaseId: id, order: { tenantId: ctx.tenantId } }, select: { purchaseId: true } }))
+      conflict('制造订单关联的采购单请在制造业进销存处理');
+    return order;
+  }
+
+  async amendConnectorDraft(tx: Prisma.TransactionClient, ctx: RequestContext, id: string, version: number,
+    input: { note?: string; quantities?: { lineId: string; quantity: number }[] }) {
+    const order = await this.connectorDraft(tx, ctx, id, version);
+    const quantities = new Map(input.quantities?.map(line => [line.lineId, line.quantity]));
+    if ([...quantities.keys()].some(lineId => !order.lines.some(line => line.id === lineId)))
+      conflict('采购明细不属于当前草稿');
+    const updates = order.lines.map(line => {
+      const quantity = quantities.get(line.id) ?? line.quantity;
+      return { id: line.id, quantity, lineTotal: quantities.has(line.id) ? storedMoney(line.unitPrice.mul(quantity)) : line.lineTotal };
+    });
+    const changed = await tx.erpPurchaseOrder.updateMany({
+      where: { id, tenantId: ctx.tenantId, version, status: 'draft', createdByMembershipId: ctx.membershipId },
+      data: { note: input.note, total: storedMoney(updates.reduce((sum, line) => sum.plus(line.lineTotal), new Prisma.Decimal(0))),
+        version: { increment: 1 } },
+    });
+    if (!changed.count) conflict('采购草稿已变化，请重新准备操作');
+    for (const { id: lineId, quantity, lineTotal } of updates) {
+      if (quantities.has(lineId)) await tx.erpPurchaseLine.update({ where: { id: lineId }, data: { quantity, lineTotal } });
+    }
+    await audit(tx, ctx, 'erp.purchase.draft_update', 'PurchaseOrder', id, { version: version + 1 });
+    return { id, number: order.number, status: order.status, version: version + 1 };
+  }
+
   async create(ctx: RequestContext, body: unknown) {
     return this.db.$transaction(tx=>this.createInTransaction(tx,ctx,body),{isolationLevel:'Serializable'});
   }

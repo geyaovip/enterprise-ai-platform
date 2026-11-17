@@ -6,7 +6,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
 import { readBody } from '../platform/security';
-import { appId, CONNECTOR_APPS, CONNECTOR_NAMES, canExecute, canPrepareDraft, canReadConnector, connectorScopes, publicOrigin, resourceFor, resourceApp, redirectAllowed, connectorChannel, oauthError, type ConnectorApp } from './connector-policy';
+import { appId, CONNECTOR_APPS, CONNECTOR_NAMES, canExecute, canManageRecords, canPrepareDraft, canReadConnector, connectorScopes, publicOrigin, resourceFor, resourceApp, redirectAllowed, connectorChannel, oauthError, type ConnectorApp } from './connector-policy';
 
 export const connectorHash=(s:string)=>createHash('sha256').update(s).digest('hex');
 const secret=()=>randomBytes(32).toString('base64url');
@@ -52,9 +52,9 @@ export class ConnectorAuthService {
   async consentDetails(req:Request,id:string){
     const user=await this.auth.user(req),row=await this.pending(id),app=row.appId as ConnectorApp;
     const memberships=await this.db.membership.findMany({where:{userId:user.id,active:true,tenant:{active:true}},include:{tenant:{select:{slug:true,name:true}}},take:100});
-    const tenants=[] as Array<{key:string;name:string;draftAllowed:boolean;executionAllowed:boolean}>;
+    const tenants=[] as Array<{key:string;name:string;draftAllowed:boolean;executionAllowed:boolean;recordsAllowed:boolean}>;
     for(const m of memberships){
-      try{const ctx=await this.auth.context(req,m.tenant.slug,app);if(canReadConnector(app,ctx.permissions))tenants.push({key:m.tenant.slug,name:m.tenant.name,draftAllowed:canPrepareDraft(app,ctx.permissions),executionAllowed:canExecute(app,ctx.permissions)});}catch{}
+      try{const ctx=await this.auth.context(req,m.tenant.slug,app);if(canReadConnector(app,ctx.permissions))tenants.push({key:m.tenant.slug,name:m.tenant.name,draftAllowed:canPrepareDraft(app,ctx.permissions),executionAllowed:canExecute(app,ctx.permissions),recordsAllowed:canManageRecords(app,ctx.permissions)});}catch{}
     }
     const nonce=secret();
     const changed=await this.db.connectorAuthorization.updateMany({where:{id,codeHash:null,deniedAt:null,expiresAt:{gt:new Date()}},data:{consentUserId:user.id,consentHash:connectorHash(nonce)}});
@@ -64,7 +64,7 @@ export class ConnectorAuthService {
   }
   async consent(req:Request,id:string,raw:unknown){
     const user=await this.auth.user(req);
-    const p=readBody(z.object({nonce:z.string().min(32).max(100),decision:z.enum(['allow','deny']),tenantKey:z.string().max(100).optional(),allowDraft:z.boolean().default(false),allowExecution:z.boolean().default(false)}).strict(),raw);
+    const p=readBody(z.object({nonce:z.string().min(32).max(100),decision:z.enum(['allow','deny']),tenantKey:z.string().max(100).optional(),allowDraft:z.boolean().default(false),allowExecution:z.boolean().default(false),allowRecords:z.boolean().default(false)}).strict(),raw);
     return this.db.$transaction(async tx=>{
       await tx.$queryRaw`SELECT id FROM "ConnectorAuthorization" WHERE id=${id} FOR UPDATE`;
       const row=await tx.connectorAuthorization.findUnique({where:{id}});
@@ -76,7 +76,8 @@ export class ConnectorAuthService {
       if(!canReadConnector(app,ctx.permissions))throw new ForbiddenException('当前岗位无可授权的业务读取权限');
       if(p.allowDraft&&(!(row.scopes as string[]).includes(app+'.draft')||!canPrepareDraft(app,ctx.permissions)))throw new ForbiddenException('当前岗位无草稿准备权限');
       if(p.allowExecution&&(!(row.scopes as string[]).includes(app+'.execute')||!canExecute(app,ctx.permissions)))throw new ForbiddenException('当前岗位无付费任务提交权限');
-      const scopes=[app+'.read',...(p.allowDraft?[app+'.draft']:[]),...(p.allowExecution?[app+'.execute']:[])];
+      if(p.allowRecords&&(!(row.scopes as string[]).includes(app+'.records')||!canManageRecords(app,ctx.permissions)))throw new ForbiddenException('当前岗位无确认式记录操作权限');
+      const scopes=[app+'.read',...(p.allowRecords?[app+'.records']:[]),...(p.allowDraft?[app+'.draft']:[]),...(p.allowExecution?[app+'.execute']:[])];
       const grant=await tx.connectorGrant.create({data:{clientId:row.clientId,userId:user.id,tenantId:ctx.tenantId,membershipId:ctx.membershipId,appId:app,resource:row.resource,scopes,expiresAt:new Date(Date.now()+30*86400000)}});
       const code=secret();await tx.connectorAuthorization.update({where:{id},data:{grantId:grant.id,codeHash:connectorHash(code),consentHash:null,expiresAt:new Date(Date.now()+5*60000)}});
       await tx.auditEvent.create({data:{tenantId:ctx.tenantId,userId:ctx.userId,membershipId:ctx.membershipId,appId:'platform',requestId:ctx.requestId,action:'platform.connector.authorize',resourceType:'ConnectorGrant',resourceId:grant.id,detail:{appId:app,scopes,clientId:row.clientId}}});

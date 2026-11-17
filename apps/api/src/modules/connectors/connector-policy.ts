@@ -6,6 +6,17 @@ export const CONNECTOR_NAMES = {erp:'知行方舟 ERP',crm:'知行方舟 CRM',me
 const DRAFT_PERMISSIONS = {erp:'erp.purchase.write',crm:'crm.task.write',mes:'mes.plan.write'};
 export type DraftConnectorApp = keyof typeof DRAFT_PERMISSIONS;
 const EXECUTION_PERMISSIONS = {content:'content.create',geo:'geo.analysis.run'};
+const RECORD_WRITE = {
+  erp: 'erp.purchase.write', crm: 'crm.task.write', mes: 'mes.plan.write',
+  content: 'content.create', geo: 'geo.project.manage', manufacturing: 'manufacturing.order',
+} as const;
+export function recordPermission(app: ConnectorApp, operation: 'create' | 'update' | 'delete') {
+  if (operation === 'delete' && app === 'erp') return 'erp.purchase.approve';
+  if (operation === 'delete' && app === 'mes') return 'mes.plan.publish';
+  return RECORD_WRITE[app];
+}
+export const canManageRecords = (app: ConnectorApp, permissions: readonly string[]) =>
+  permissions.includes(RECORD_WRITE[app]);
 export type ExecutionConnectorApp = keyof typeof EXECUTION_PERMISSIONS;
 export function supportsDraft(app: ConnectorApp): app is DraftConnectorApp {
   return Object.hasOwn(DRAFT_PERMISSIONS, app);
@@ -14,7 +25,7 @@ export function supportsExecution(app: ConnectorApp): app is ExecutionConnectorA
   return Object.hasOwn(EXECUTION_PERMISSIONS, app);
 }
 export const connectorScopes = (app: ConnectorApp) =>
-  [app + '.read', ...(supportsDraft(app) ? [app + '.draft'] : supportsExecution(app) ? [app + '.execute'] : [])];
+  [app + '.read', app + '.records', ...(supportsDraft(app) ? [app + '.draft'] : supportsExecution(app) ? [app + '.execute'] : [])];
 export const canPrepareDraft = (app: ConnectorApp, permissions: readonly string[]) =>
   supportsDraft(app) && permissions.includes(DRAFT_PERMISSIONS[app]);
 export const canExecute = (app: ConnectorApp, permissions: readonly string[]) =>

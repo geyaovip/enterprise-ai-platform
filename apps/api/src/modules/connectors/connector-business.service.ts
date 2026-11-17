@@ -26,7 +26,8 @@ import { positiveQty, money } from '../erp/erp.common';
 import { readBody } from '../platform/security';
 import { ConnectorAuthService } from './connector-auth.service';
 import { ConnectorExecutionService, contentQuoteInput, geoQuoteInput } from './connector-execution.service';
-import { canExecute, publicOrigin, supportsDraft, type ConnectorApp, type DraftConnectorApp } from './connector-policy';
+import { ConnectorRecordsService, recordChangeInput, recordGuides } from './connector-records.service';
+import { canExecute, canManageRecords, publicOrigin, supportsDraft, type ConnectorApp, type DraftConnectorApp } from './connector-policy';
 
 const json=(v:unknown)=>JSON.parse(JSON.stringify(v));
 const paging=z.object({page:z.int().min(1).max(10000).default(1),page_size:z.int().min(1).max(100).default(20),q:z.string().max(100).default('')}).strict();
@@ -34,28 +35,39 @@ const contentPaging=paging.omit({page_size:true});
 const purchaseDraft=z.object({number:z.string().trim().min(1).max(80).optional(),supplierId:z.uuid(),lines:z.array(z.object({productId:z.uuid(),quantity:positiveQty,unitPrice:money.optional()}).strict()).min(1).max(100)}).strict();
 const COMMANDS={erp:'erp.purchase.create_draft',crm:'crm.task.create_draft',mes:'mes.plan.create_draft'};
 type Tool={name:string;description:string;schema:z.ZodObject<any>;permission?:string;roles?:string[];draft?:boolean;scope?:string;readOnly:boolean;run:(input:any)=>Promise<unknown>};
+const RECORD_CHANGE = 'connector.record.change';
+const recordToolSchema = z.strictObject({ operation: z.enum(['create','update','delete']), requestKey: z.uuid(),
+  id: z.uuid().optional(), version: z.int().positive().optional(), fields: z.record(z.string(),z.unknown()).optional(),
+  reason: z.string().trim().min(1).max(500).optional() });
 const quoteIdInput=z.object({quoteId:z.uuid()}).strict();
 
 @Injectable()
 export class ConnectorBusinessService {
-  constructor(readonly db:PrismaService,readonly access:ConnectorAuthService,readonly master:MasterService,readonly purchase:PurchaseService,readonly inventory:ReplenishmentService,readonly metrics:CrmMetricsService,readonly segments:CrmSegmentService,readonly mes:MesService,readonly bus:CommandBus,readonly crmQueries:CrmConnectorQueries,readonly queries:ConnectorBusinessQueries,readonly content:ContentService,readonly geo:GeoService,readonly execution:ConnectorExecutionService,readonly manufacturing:ManufacturingService){}
+  constructor(readonly db:PrismaService,readonly access:ConnectorAuthService,readonly master:MasterService,readonly purchase:PurchaseService,readonly inventory:ReplenishmentService,readonly metrics:CrmMetricsService,readonly segments:CrmSegmentService,readonly mes:MesService,readonly bus:CommandBus,readonly crmQueries:CrmConnectorQueries,readonly queries:ConnectorBusinessQueries,readonly content:ContentService,readonly geo:GeoService,readonly execution:ConnectorExecutionService,readonly manufacturing:ManufacturingService, readonly records:ConnectorRecordsService){}
 
   tools(app:ConnectorApp,grant:any,ctx:RequestContext):Tool[]{
     const tools:Tool[]=[{name:'ark_context',description:'查询本次连接的企业、应用与授权范围；权限由服务端确定。',schema:z.object({}).strict(),readOnly:true,run:async()=>{
       const tenant=await this.db.tenant.findUnique({where:{id:ctx.tenantId},select:{name:true}});
       return {appId:app,tenantKey:ctx.tenantKey,tenantName:tenant?.name,scopes:grant.scopes,permissions:ctx.permissions.filter(p=>p.startsWith(app+'.')),modelInvocation:false};
     }}];
-    if(supportsDraft(app))tools.push(
+    if(supportsDraft(app)||(grant.scopes as string[]).includes(app+'.records'))tools.push(
       {name:'ark_action_status',description:'查询本连接准备的操作状态与真实业务回执。结果未知时先查询，不重复提交。',schema:z.object({actionId:z.uuid()}).strict(),readOnly:true,run:i=>this.actionStatus(grant,ctx,i.actionId)}
     );
+    if (canManageRecords(app,ctx.permissions)) tools.push({
+      name:app+'_prepare_record_change',schema:recordToolSchema,scope:app+'.records',readOnly:false,
+      description:recordGuides[app]+' 新增传 operation=create 和 fields。修改传 operation=update、id、version 和 fields。删除传 operation=delete、id、version 和 reason。每个操作使用新的 UUID requestKey。仅生成提案。把 confirmationUrl 交给用户本人确认，之后用 ark_action_status 回查。',
+      run:i=>this.prepareRecord(grant,ctx,app,i),
+    });
     if(app==='content')tools.push(
       {name:'content_projects',description:'分页搜索有权品牌内容项目的名称与更新时间。',schema:contentPaging,permission:'content.read',readOnly:true,run:i=>this.contentProjects(ctx,i)},
+      {name:'content_project_detail',description:'按真实 ID 读取可见内容项目、创作需求和当前版本。',schema:z.strictObject({id:z.uuid()}),permission:'content.read',readOnly:true,run:async i=>{const {id,name,brief,version}=await this.content.project(ctx,i.id);return {id,name,brief,version};}},
       {name:'content_assets',description:'按真实项目ID分页读取可见素材的名称、格式与尺寸；省略项目ID时读取企业共享素材。文件需在工作台预览或下载。',schema:contentPaging.extend({projectId:z.uuid().optional()}),permission:'content.read',readOnly:true,run:i=>this.contentAssets(ctx,i)},
       {name:'content_quote_generation',description:'核对图片、参考改图或视频生成参数，返回模型、数量、费用状态与有效期。费用可能未知。向用户展示范围并在对话中确认；预览不提交生成。',schema:contentQuoteInput,permission:'content.create',scope:'content.execute',readOnly:false,run:i=>this.execution.contentQuote(grant.id,ctx,i)},
       {name:'content_submit_generation',description:'仅在用户明确同意本次预览的生成范围和费用状态后提交。使用同一quoteId重试；超时先回查，避免重复付费。返回排队任务。',schema:quoteIdInput,permission:'content.create',scope:'content.execute',readOnly:false,run:i=>this.execution.submit(app,grant.id,ctx,i.quoteId)},
       {name:'content_generation_status',description:'按本连接的quoteId查询生成批次及单项状态、可见素材ID。待处理和结果未知都不表示完成。',schema:quoteIdInput,permission:'content.read',readOnly:true,run:i=>this.execution.status(app,grant.id,ctx,i.quoteId)}
     );
     if(app==='manufacturing')tools.push(
+      {name:'manufacturing_catalog',description:'搜索制造客户、成品物料与仓库，获取新增待审核订单所需的 ID。',schema:paging.omit({page_size:true}).extend({q:z.string().max(80).default('')}),permission:'manufacturing.read',readOnly:true,run:i=>this.manufacturing.catalog(ctx,i)},
       {name:'manufacturing_orders',description:'按订单号、客户或成品查询制造订单，区分接单、成品入库和发货数量。',schema:paging.omit({page_size:true}).extend({q:z.string().max(80).default('')}),permission:'manufacturing.read',readOnly:true,run:i=>this.manufacturing.orders(ctx,i)},
       {name:'manufacturing_order_status',description:'按真实订单ID查询BOM版本、缺料、锁定、在途、生产审核进度和出入库摘要。',schema:z.object({id:z.uuid()}).strict(),permission:'manufacturing.read',readOnly:true,run:i=>this.manufacturingStatus(ctx,i.id)},
       {name:'manufacturing_stock',description:'按仓库及物料搜索实际库存、锁定、可用量与安全库存预警。',schema:paging.omit({page_size:true}).extend({q:z.string().max(80).default(''),warehouseId:z.uuid().optional(),alerts:z.boolean().default(false)}),permission:'manufacturing.read',readOnly:true,run:i=>this.manufacturingStock(ctx,i)},
@@ -63,6 +75,7 @@ export class ConnectorBusinessService {
     );
     if(app==='geo')tools.push(
       {name:'geo_projects',description:'分页搜索获授权的GEO项目、品牌、地域和语言。',schema:paging,permission:'geo.read',readOnly:true,run:i=>this.geoProjects(ctx,i)},
+      {name:'geo_project_detail',description:'按真实项目 ID 查 GEO 配置和当前版本。',schema:z.strictObject({id:z.uuid()}),permission:'geo.read',readOnly:true,run:i=>this.geo.project(ctx,i.id)},
       {name:'geo_reports',description:'分页读取指定项目已有分析的状态和报告ID，不启动分析。',schema:paging.extend({projectId:z.uuid()}),permission:'geo.read',readOnly:true,run:i=>this.geo.analyses(ctx,i.projectId,i)},
       {name:'geo_report_summary',description:'按真实分析ID读取已保存报告的样本口径、评分、竞品缺席摘要、引用域名和复测可比性，不启动模型。',schema:z.object({id:z.uuid()}).strict(),permission:'geo.read',readOnly:true,run:i=>this.geoReportSummary(ctx,i.id)},
       {name:'geo_analysis_options',description:'列出指定项目的启用题目、联网要求及已配置的模型，使用真实ID选择分析范围。',schema:contentPaging.omit({q:true}).extend({projectId:z.uuid()}),permission:'geo.analysis.run',scope:'geo.execute',readOnly:true,run:i=>this.geoAnalysisOptions(ctx,i.projectId,i.page)},
@@ -123,7 +136,7 @@ export class ConnectorBusinessService {
       {name:'mes_prepare_plan_draft',description:'准备生产计划草稿提案并展示确定性需求。确认后仅保存草稿，不发布、派工或报工。',schema:z.object({requestKey:z.uuid(),draft:planDraft}).strict(),permission:'mes.plan.write',draft:true,readOnly:false,run:i=>this.prepare(grant,ctx,app,i.draft,i.requestKey)}
     );
     const scopes=grant.scopes as string[];
-    return tools.filter(t=>(!t.permission||ctx.permissions.includes(t.permission))&&(!t.roles||t.roles.some(role=>ctx.roles.includes(role)))&&(!t.draft||scopes.includes(app+'.draft'))&&(!t.scope||(scopes.includes(t.scope)&&canExecute(app,ctx.permissions))));
+    return tools.filter(t=>(!t.permission||ctx.permissions.includes(t.permission))&&(!t.roles||t.roles.some(role=>ctx.roles.includes(role)))&&(!t.draft||scopes.includes(app+'.draft'))&&(!t.scope||(scopes.includes(t.scope)&&(t.scope===app+'.records'||canExecute(app,ctx.permissions)))));
   }
   private async manufacturingStock(ctx: RequestContext, input: { page: number; q: string; warehouseId?: string; alerts: boolean }) {
     const { warehouses, warehouseId, items, total, page, page_size } = await this.manufacturing.stock(ctx, { ...input, alerts: String(input.alerts) });
@@ -139,6 +152,7 @@ export class ConnectorBusinessService {
     return {
       id: order.id, number: order.number, customer: order.customerName, product: order.productName,
       quantity: order.quantity, completedQty: order.completedQty, shippedQty: order.shippedQty,
+      version: order.version, salesStatus: order.salesStatus,
       dueDate: order.dueDate, bomRevision: order.bomRevision, warehouse: order.warehouse,
       quantityNotes:{orderAvailable:'本单可用，包含本单已锁数量，扣除其他订单锁库。',orderSuggested:'订单待补，按本单缺口扣减在途和待确认采购。'},
       requirements: order.requirements.slice(0, 100).map(row=>({
@@ -161,7 +175,7 @@ export class ConnectorBusinessService {
   }
   private async geoProjects(ctx:RequestContext,input:z.infer<typeof paging>){
     const result=await this.geo.projects(ctx,input);
-    return {...result,items:result.items.map(({id,name,brandName,country,language,timezone,active})=>({id,name,brandName,country,language,timezone,active}))};
+    return {...result,items:result.items.map(({id,name,brandName,country,language,timezone,active,version})=>({id,name,brandName,country,language,timezone,active,version}))};
   }
   private async geoAnalysisOptions(ctx:RequestContext,projectId:string,page:number){
     const [questions,models]=await Promise.all([this.geo.questions(ctx,projectId),this.geo.models(ctx)]);
@@ -206,7 +220,7 @@ export class ConnectorBusinessService {
     if(app==='crm')return {操作:'创建运营任务草稿',标题:input.title,逐客户反馈:input.trackCustomers?'完成前逐客户记录处理结果':'沿用任务级记录',运营目标:input.goal,方案:input.planText,执行清单:input.checklist?.map((x:any)=>x.text),假设:input.hypotheses,目标人数:p.target?.memberCount??'未指定，保存后补充',结果范围:'仅保存草稿，不群发、不提交或启动运营'};
     return {操作:'创建生产计划草稿',计划编号:input.code,产品:p.productSku+' · '+p.productName,目标数量:input.targetQty,截止时间:input.dueAt,BOM版本:p.bomRevision,需求预览:p.requirements.map((l:any)=>({物料:l.sku+' · '+l.name,需求数量:l.quantity+' '+l.unit})),备注:input.note,结果范围:'仅保存草稿，不发布或派工；物料需求不等于缺料'};
   }
-  private view(a:any){return {actionId:a.id,appId:a.appId,status:a.status,version:a.version,fingerprint:a.fingerprint,expiresAt:a.expiresAt,parameters:this.presentation(a.appId,a.input,a.preview),confirmationUrl:publicOrigin()+'/connect/actions/'+a.id,...(a.result?{receipt:a.result}:{})};}
+  private view(a:any){return {actionId:a.id,appId:a.appId,status:a.status,version:a.version,fingerprint:a.fingerprint,expiresAt:a.expiresAt,parameters:a.command===RECORD_CHANGE?a.preview:this.presentation(a.appId,a.input,a.preview),kind:a.command===RECORD_CHANGE?'record':'draft',...(a.command===RECORD_CHANGE?{operation:a.input.operation}:{}),confirmationUrl:publicOrigin()+'/connect/actions/'+a.id,...(a.result?{receipt:a.result}:{})};}
   private async lockedGrant(tx:Prisma.TransactionClient,id:string){
     await tx.$queryRaw`SELECT id FROM "ConnectorGrant" WHERE id=${id} FOR UPDATE`;
     const g=await tx.connectorGrant.findUnique({where:{id}});if(!g||g.revokedAt||g.expiresAt<=new Date())throw new ForbiddenException('连接授权已失效');return g;
@@ -231,14 +245,81 @@ export class ConnectorBusinessService {
     },{timeout:15000});
     return this.view(a);
   }
+  private async prepareRecord(grant: { id:string }, ctx:RequestContext, app:ConnectorApp, raw:unknown) {
+    const input = readBody(recordChangeInput, raw);
+    this.records.authorize(ctx, app, input);
+    const requestFingerprint = fingerprint({ command: RECORD_CHANGE, input });
+    const action = await this.serializable(async tx => {
+      const g = await this.lockedGrant(tx, grant.id);
+      if (g.appId !== app || g.tenantId !== ctx.tenantId || g.userId !== ctx.userId ||
+          g.membershipId !== ctx.membershipId || !(g.scopes as string[]).includes(app+'.records')) {
+        throw new ForbiddenException('未授权准备记录操作');
+      }
+      const existing = await tx.connectorAction.findUnique({ where: { grantId_requestKey: { grantId: g.id, requestKey: input.requestKey } } });
+      if (existing) {
+        if (existing.requestFingerprint !== requestFingerprint) throw new ConflictException('相同请求标识的参数不一致');
+        return existing;
+      }
+      await this.lockActor(tx, ctx);
+      const prepared = await this.records.inspect(tx, ctx, app, input);
+      const preview = json(prepared.parameters);
+      const created = await tx.connectorAction.create({ data: {
+        grantId:g.id, tenantId:ctx.tenantId, userId:ctx.userId, membershipId:ctx.membershipId, appId:app,
+        command:RECORD_CHANGE, requestKey:input.requestKey, input:json(input), preview, requestFingerprint,
+        fingerprint:fingerprint({input,preview}), expiresAt:new Date(Date.now()+20*60000),
+      } });
+      await tx.auditEvent.create({ data: {
+        tenantId:ctx.tenantId,userId:ctx.userId,membershipId:ctx.membershipId,appId:app,requestId:ctx.requestId,
+        action:app+'.connector.prepare',resourceType:'ConnectorAction',resourceId:created.id,
+        detail:{command:created.command,grantId:g.id,clientId:g.clientId,operation:input.operation},
+      } });
+      return created;
+    });
+    return this.view(action);
+  }
+
+  private async confirmRecord(tx:Prisma.TransactionClient, ctx:RequestContext, g:Awaited<ReturnType<ConnectorBusinessService['lockedGrant']>>,
+    action:Pick<Prisma.ConnectorActionGetPayload<{}>,'id'|'appId'|'input'|'fingerprint'>) {
+    const app = action.appId as ConnectorApp;
+    if (!(g.scopes as string[]).includes(app+'.records')) throw new ForbiddenException('记录操作授权已失效');
+    const input = readBody(recordChangeInput, action.input);
+    const current = await this.access.current(g);
+    const actor = { ...current, requestId: 'connector:'+action.id };
+    const prepared = await this.records.inspect(tx, actor, app, input);
+    const preview = json(prepared.parameters);
+    if (fingerprint({ input, preview }) !== action.fingerprint) throw new ConflictException('业务依据已变化，请返回发起客户端重新准备');
+    const result = await prepared.execute(action.id);
+    const path = input.operation==='delete'&&app==='content'?'/content/trash':prepared.route+'/'+encodeURIComponent(result.id);
+    const receipt = {
+      id: result.id, number: result.number??result.code??null, title: result.title??result.name??null,
+      version: result.version, status: result.status??'saved', operation: input.operation, appId: app,
+      destination: publicOrigin()+'/t/'+encodeURIComponent(ctx.tenantKey)+path,
+    };
+    await tx.applicationCommandReceipt.create({ data: {
+      tenantId:ctx.tenantId,appId:app,command:RECORD_CHANGE,requestKey:actor.requestId,
+      fingerprint:action.fingerprint,result:json(receipt),
+    } });
+    const saved = await tx.connectorAction.update({ where:{id:action.id},data:{
+      status:'completed',result:json(receipt),confirmedAt:new Date(),version:{increment:1},
+    } });
+    await tx.auditEvent.create({ data: {
+      tenantId:ctx.tenantId,userId:ctx.userId,membershipId:ctx.membershipId,appId:app,
+      requestId:actor.requestId,action:app+'.connector.confirm',resourceType:'ConnectorAction',resourceId:action.id,
+      detail:{grantId:g.id,clientId:g.clientId,command:RECORD_CHANGE,operation:input.operation,businessId:result.id},
+    } });
+    return this.view(saved);
+  }
+
   private async webAction(req:Request,id:string){
     const user=await this.access.auth.user(req),a=await this.db.connectorAction.findFirst({where:{id,userId:user.id}});if(!a)throw new NotFoundException('操作不存在或不可见');
-    if(a.appId!=='erp'&&a.appId!=='crm'&&a.appId!=='mes')throw new NotFoundException('操作不存在或不可见');
+    if(a.command!==RECORD_CHANGE&&!supportsDraft(a.appId as ConnectorApp))throw new NotFoundException('操作不存在或不可见');
     const t=await this.db.tenant.findUnique({where:{id:a.tenantId}});if(!t)throw new NotFoundException('企业不存在');
     const ctx=await this.access.auth.context(req,t.slug,a.appId);if(ctx.membershipId!==a.membershipId)throw new ForbiddenException('操作不属于当前成员');
-    this.bus.registry.prepare(ctx,a.command,a.input);return {a,ctx};
+    if(a.command===RECORD_CHANGE) this.records.authorize(ctx,a.appId as ConnectorApp,readBody(recordChangeInput,a.input));
+    else this.bus.registry.prepare(ctx,a.command,a.input);
+    return {a,ctx,tenantName:t.name};
   }
-  async actionDetails(req:Request,id:string){const {a,ctx}=await this.webAction(req,id),g=await this.db.connectorGrant.findUnique({where:{id:a.grantId}});return {...this.view(a),tenantKey:ctx.tenantKey,connectionActive:!!g&&!g.revokedAt&&g.expiresAt>new Date()};}
+  async actionDetails(req:Request,id:string){const {a,ctx,tenantName}=await this.webAction(req,id),g=await this.db.connectorGrant.findUnique({where:{id:a.grantId}});return {...this.view(a),tenantKey:ctx.tenantKey,tenantName,connectionActive:!!g&&!g.revokedAt&&g.expiresAt>new Date()};}
   private async serializable<T>(run:(tx:Prisma.TransactionClient)=>Promise<T>):Promise<T>{
     for(let attempt=0;;attempt++){
       try{return await this.db.$transaction(run,{isolationLevel:'Serializable',timeout:20000});}
@@ -255,6 +336,7 @@ export class ConnectorBusinessService {
       if(current.status==='completed')return this.view(current);
       if(current.status!=='pending'||current.version!==p.version||current.expiresAt<=new Date())throw new ConflictException('操作已处理或过期，请重新准备');
       if(p.decision==='cancel')return this.view(await tx.connectorAction.update({where:{id},data:{status:'cancelled',version:{increment:1}}}));
+      if(current.command===RECORD_CHANGE) return this.confirmRecord(tx,ctx,g,current);
       if(!(g.scopes as string[]).includes(a.appId+'.draft'))throw new ForbiddenException('草稿授权已失效');
       const prepared=this.bus.registry.prepare(ctx,current.command,current.input),fresh=json(await this.preview(ctx,a.appId as DraftConnectorApp,prepared.input,tx));
       if(fingerprint({input:current.input,preview:fresh})!==current.fingerprint)throw new ConflictException('业务依据已变化，请返回WorkBuddy重新准备');
@@ -272,6 +354,10 @@ export class ConnectorBusinessService {
   }
   async actionStatus(grant:any,ctx:RequestContext,id:string){
     const a=await this.db.connectorAction.findFirst({where:{id,grantId:grant.id,tenantId:ctx.tenantId,userId:ctx.userId,membershipId:ctx.membershipId,appId:ctx.app.appId}});if(!a)throw new NotFoundException('操作不存在或不可见');
+    if(a.command===RECORD_CHANGE) {
+      this.records.authorize(ctx,a.appId as ConnectorApp,readBody(recordChangeInput,a.input));
+      return this.view(a);
+    }
     this.bus.registry.prepare(ctx,a.command,a.input);
     const v=this.view(a);
     if(a.status==='completed'&&a.result){const r=a.result as any;const current:any=await this.bus.registry.resource(ctx,a.appId==='erp'?'purchase':a.appId==='crm'?'operation_task':'plan',r.id);return {...v,currentBusiness:this.receipt(ctx,a.appId as ConnectorApp,current)};}

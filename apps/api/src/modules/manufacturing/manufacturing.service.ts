@@ -34,9 +34,10 @@ export class ManufacturingService {
   private async write<T>(
     ctx: RequestContext, permission: string, operation: string, input: { requestKey: string },
     run: (tx: Transaction, context: RequestContext) => Promise<T>,
+    external?: Transaction,
   ): Promise<T> {
     this.require(ctx, permission);
-    const result = await this.db.$transaction(async tx => {
+    const perform = async (tx: Transaction) => {
       await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtextextended(${ctx.tenantId + ':manufacturing'}, 0))`;
       const members = await tx.$queryRaw<{ role: string }[]>`
         SELECT m.role FROM "Membership" m
@@ -69,7 +70,8 @@ export class ManufacturingService {
         resourceId: (saved as { id?: string }).id ?? input.requestKey, detail: json,
       } });
       return json;
-    }, { timeout: 20_000 });
+    };
+    const result = external ? await perform(external) : await this.db.$transaction(perform, { timeout: 20_000 });
     return result as T;
   }
 
@@ -177,42 +179,76 @@ export class ManufacturingService {
     }, { isolationLevel: 'RepeatableRead' });
   }
 
-  createOrder(ctx: RequestContext, raw: unknown) {
+  async orderDraft(tx: Transaction, c: RequestContext, input: z.infer<typeof orderInput>) {
+    this.require(c, 'manufacturing.order');
+    const customer = await this.erp.customer(tx, c, input.customerId);
+    const wh = await this.erp.warehouse(tx, c, input.warehouseId);
+    if (!wh.active) conflict('所选仓库已停用');
+    const material = await this.mes.get(c, 'material', input.materialId, tx);
+    if (material.kind !== 'finished' || !material.active) conflict('请选择有效的成品物料');
+    const snapshot = await this.mes.manufacturingSnapshot(c, material.id, input.quantity, tx);
+    const links = await tx.manufacturingItem.findMany({
+      where: { tenantId: c.tenantId, materialId: { in: [material.id, ...snapshot.requirements.map(r => r.materialId)] } },
+    });
+    const ids = new Map(links.map(l => [l.materialId, l.productId]));
+    const productId = ids.get(material.id);
+    if (!productId) conflict('成品还没有关联库存商品');
+    const product = await this.erp.product(tx, c, productId);
+    if (bomUnitKey(material.unit) !== bomUnitKey(product.unit)) conflict('成品的BOM单位和库存单位不一致');
+    const requirements = await Promise.all(snapshot.requirements.map(async row => {
+      const id = ids.get(row.materialId);
+      if (!id) conflict(`物料 ${row.sku} 还没有关联库存商品`);
+      const item = await this.erp.product(tx, c, id);
+      if (bomUnitKey(row.unit) !== bomUnitKey(item.unit)) conflict(`物料 ${row.sku} 的BOM单位和库存单位不一致`);
+      const quantity = new D(row.quantity);
+      if (quantity.lte(0) || quantity.gt(1e9)) conflict(`物料 ${row.sku} 的需求量超过可处理范围`);
+      return { productId: id, sku: item.sku, name: item.name, unit: item.unit, quantity };
+    }));
+    if (!requirements.length) conflict('BOM没有可领用的组件');
+    return {
+      tenantId: c.tenantId, number: input.number, customerId: customer.id, customerName: customer.name,
+      productId, productName: product.name, sku: product.sku, warehouseId: wh.id,
+      createdBy: c.membershipId, quantity: input.quantity, salesStatus: input.approvalRequired ? 'pending_approval' : 'confirmed', dueDate: input.dueDate,
+      bomId: snapshot.bom.id, bomRevision: snapshot.bom.revision, bomVersions: snapshot.bomVersions,
+      requirements,
+    };
+  }
+
+  createOrder(ctx: RequestContext, raw: unknown, external?: Transaction) {
     const input = readBody(orderInput, raw);
     return this.write(ctx, 'manufacturing.order', 'create_order', input, async (tx, c) => {
-      const customer = await this.erp.customer(tx, c, input.customerId);
-      const wh = await this.erp.warehouse(tx, c, input.warehouseId);
-      if (!wh.active) conflict('所选仓库已停用');
-      const material = await this.mes.get(c, 'material', input.materialId, tx);
-      if (material.kind !== 'finished' || !material.active) conflict('请选择有效的成品物料');
-      const snapshot = await this.mes.manufacturingSnapshot(c, material.id, input.quantity, tx);
-      const links = await tx.manufacturingItem.findMany({
-        where: { tenantId: c.tenantId, materialId: { in: [material.id, ...snapshot.requirements.map(r => r.materialId)] } },
+      const { requirements, ...data } = await this.orderDraft(tx, c, input);
+      const order = await tx.manufacturingOrder.create({ data: { ...data, requirements: { create: requirements } } });
+      return { id: order.id, number: order.number, version: order.version, salesStatus: order.salesStatus };
+    }, external);
+  }
+
+  async pendingOrder(tx: Transaction, ctx: RequestContext, id: string, version: number) {
+    this.require(ctx, 'manufacturing.order');
+    const order = await this.getOrder(tx, ctx, id);
+    this.checkVersion(order, version);
+    if (order.salesStatus !== 'pending_approval' || order.createdBy !== ctx.membershipId)
+      conflict('只能处理本人创建的待审核制造订单');
+    return order;
+  }
+
+  amendPendingOrder(ctx: RequestContext, id: string, input: {
+    requestKey: string; version: number; operation: 'update'; dueDate: string | null;
+  } | { requestKey: string; version: number; operation: 'delete'; reason: string }, external: Transaction) {
+    return this.write(ctx, 'manufacturing.order', 'pending_order_' + input.operation + ':' + id, input, async (tx, c) => {
+      await this.pendingOrder(tx, c, id, input.version);
+      const changed = await tx.manufacturingOrder.updateMany({
+        where: { id, tenantId: c.tenantId, createdBy: c.membershipId, version: input.version, salesStatus: 'pending_approval' },
+        data: {
+          ...(input.operation === 'delete'
+            ? { salesStatus: 'cancelled', salesReviewNote: input.reason }
+            : { dueDate: input.dueDate }),
+          version: { increment: 1 },
+        },
       });
-      const ids = new Map(links.map(l => [l.materialId, l.productId]));
-      const productId = ids.get(material.id);
-      if (!productId) conflict('成品还没有关联库存商品');
-      const product = await this.erp.product(tx, c, productId);
-      if (bomUnitKey(material.unit) !== bomUnitKey(product.unit)) conflict('成品的BOM单位和库存单位不一致');
-      const requirements = await Promise.all(snapshot.requirements.map(async row => {
-        const id = ids.get(row.materialId);
-        if (!id) conflict(`物料 ${row.sku} 还没有关联库存商品`);
-        const item = await this.erp.product(tx, c, id);
-        if (bomUnitKey(row.unit) !== bomUnitKey(item.unit)) conflict(`物料 ${row.sku} 的BOM单位和库存单位不一致`);
-        const quantity = new D(row.quantity);
-        if (quantity.lte(0) || quantity.gt(1e9)) conflict(`物料 ${row.sku} 的需求量超过可处理范围`);
-        return { productId: id, sku: item.sku, name: item.name, unit: item.unit, quantity };
-      }));
-      if (!requirements.length) conflict('BOM没有可领用的组件');
-      const order = await tx.manufacturingOrder.create({ data: {
-        tenantId: c.tenantId, number: input.number, customerId: customer.id, customerName: customer.name,
-        productId, productName: product.name, sku: product.sku, warehouseId: wh.id,
-        createdBy: c.membershipId, quantity: input.quantity, salesStatus: input.approvalRequired ? 'pending_approval' : 'confirmed', dueDate: input.dueDate,
-        bomId: snapshot.bom.id, bomRevision: snapshot.bom.revision, bomVersions: snapshot.bomVersions,
-        requirements: { create: requirements },
-      } });
-      return { id: order.id, number: order.number, version: order.version };
-    });
+      if (!changed.count) conflict('制造订单已变化，请重新准备操作');
+      return tx.manufacturingOrder.findUniqueOrThrow({ where: { id }, select: { id: true, number: true, version: true, salesStatus: true } });
+    }, external);
   }
 
   private async supply(tx: Transaction, ctx: RequestContext, order: Order) {

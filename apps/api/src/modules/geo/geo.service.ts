@@ -162,9 +162,9 @@ export class GeoService {
       },
     });
   }
-  async project(ctx: RequestContext, id: string) {
+  async project(ctx: RequestContext, id: string, tx: Prisma.TransactionClient = this.db) {
     this.require(ctx);
-    const p = await this.db.geoProject.findFirst({
+    const p = await tx.geoProject.findFirst({
       where: { id, tenantId: ctx.tenantId },
     });
     if (!p) throw new NotFoundException("项目不存在");
@@ -206,16 +206,25 @@ export class GeoService {
     ]);
     return { items, total, page: q.page, page_size: q.page_size };
   }
-  async saveProject(ctx: RequestContext, raw: unknown, id?: string) {
+  connectorProjectInput(fields: Record<string, unknown>, previous?: Record<string, unknown>) {
+    const shape = projectInput.omit({ active: true });
+    for (const key of Object.keys(fields)) {
+      if (!Object.hasOwn(shape.shape, key)) throw new BadRequestException('项目字段不受支持：' + key);
+    }
+    if (previous && !Object.keys(fields).length) throw new BadRequestException('请提供要修改的字段');
+    return readBody(shape, { ...previous, ...fields });
+  }
+
+  async saveProject(ctx: RequestContext, raw: unknown, id?: string, external?: Prisma.TransactionClient) {
     this.require(ctx, "geo.project.manage");
     const v = readBody(
       id ? projectInput.extend({ version: z.int().positive() }) : projectInput,
       raw,
     );
-    if (id) await this.project(ctx, id);
-    return this.db.$transaction(async (tx) => {
+    const save = async (tx: Prisma.TransactionClient) => {
       let p;
       if (id) {
+        await this.project(ctx, id, tx);
         const { version, ...data } = v as z.infer<typeof projectInput> & {
           version: number;
         };
@@ -241,7 +250,22 @@ export class GeoService {
       }
       await this.audit(tx, ctx, id ? "project.update" : "project.create", p.id);
       return p;
+    };
+    return external ? save(external) : this.db.$transaction(save);
+  }
+
+  async archiveConnectorProject(ctx: RequestContext, id: string, version: number, tx: Prisma.TransactionClient) {
+    this.require(ctx, "geo.project.manage");
+    const where = { id, tenantId: ctx.tenantId, version, active: true };
+    const changed = await tx.geoProject.updateMany({ where, data: { active: false, version: { increment: 1 } } });
+    if (!changed.count) throw new ConflictException("项目已变化，请刷新");
+    await tx.geoSchedule.updateMany({
+      where: { tenantId: ctx.tenantId, projectId: id, active: true },
+      data: { active: false, version: { increment: 1 } },
     });
+    await this.audit(tx, ctx, "project.archive", id);
+    const project = await tx.geoProject.findUniqueOrThrow({ where: { id } });
+    return { ...project, status: "inactive" };
   }
   async questions(ctx: RequestContext, id: string) {
     await this.project(ctx, id);
