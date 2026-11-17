@@ -71,7 +71,8 @@ export function OrderPage({ tenantKey, id, permissions }: { tenantKey: string; i
               <div className="panel-heading manufacturing-heading"><h2>物料需求</h2>
                 {allowed('buy') && order.requirements.some(r => Number(r.suggested) > 0) && <button className="primary" onClick={() => open({ type: 'purchase' })}>{labels.purchase}</button>}
               </div>
-              <table><thead><tr><th>物料</th><th>需求</th><th>已领</th><th>仓库现存</th><th>本单可用</th><th>本单锁定</th><th>缺料</th><th>待确认采购</th><th>在途</th><th>待补</th></tr></thead>
+              <p className="muted">本单可用含本单已锁数量。订单待补按本单缺口扣减在途和待确认采购。</p>
+              <table><thead><tr><th>物料</th><th>需求</th><th>已领</th><th>仓库现存</th><th>本单可用（含本单锁定）</th><th>本单锁定</th><th>缺料</th><th>待确认采购</th><th>在途</th><th>订单待补</th></tr></thead>
                 <tbody>{order.requirements.map(row => <tr key={row.productId}><td>{row.sku} · {row.name}（{row.unit}）</td>
                   <td>{amount(row.quantity)}</td><td>{amount(row.issued)}</td><td>{amount(row.onHand)}</td><td>{amount(row.available)}</td><td>{amount(row.reserved)}</td><td>{amount(row.shortage)}</td>
                   <td>{amount(row.pending)}</td><td>{amount(row.incoming)}</td><td>{amount(row.suggested)}</td></tr>)}</tbody>
@@ -97,7 +98,7 @@ export function OrderPage({ tenantKey, id, permissions }: { tenantKey: string; i
           { id: 'plan', label: '计划与报工', content: <ProductionPanel order={order} tenantKey={tenantKey} permissions={permissions} saved={saved}/> },
           { id: 'production', label: '生产与发货', content: <>
             <section className="panel table-wrap"><h2>工单领退料</h2>
-              <table><thead><tr><th>物料</th><th>需求</th><th>已领</th><th>已耗用</th><th>本单可用</th><th>本单锁定</th>{allowed('stock') && <th>操作</th>}</tr></thead>
+              <table><thead><tr><th>物料</th><th>需求</th><th>已领</th><th>已耗用</th><th>本单可用（含本单锁定）</th><th>本单锁定</th>{allowed('stock') && <th>操作</th>}</tr></thead>
                 <tbody>{order.requirements.map(row => <tr key={row.productId}><td>{row.sku} · {row.name}（{row.unit}）</td>
                   <td>{amount(row.quantity)}</td><td>{amount(row.issued)}</td><td>{amount(row.consumed)}</td><td>{amount(row.available)}</td><td>{amount(row.reserved)}</td>
                   {allowed('stock') && <td><div className="manufacturing-actions">

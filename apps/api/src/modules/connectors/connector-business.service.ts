@@ -41,7 +41,10 @@ export class ConnectorBusinessService {
   constructor(readonly db:PrismaService,readonly access:ConnectorAuthService,readonly master:MasterService,readonly purchase:PurchaseService,readonly inventory:ReplenishmentService,readonly metrics:CrmMetricsService,readonly segments:CrmSegmentService,readonly mes:MesService,readonly bus:CommandBus,readonly crmQueries:CrmConnectorQueries,readonly queries:ConnectorBusinessQueries,readonly content:ContentService,readonly geo:GeoService,readonly execution:ConnectorExecutionService,readonly manufacturing:ManufacturingService){}
 
   tools(app:ConnectorApp,grant:any,ctx:RequestContext):Tool[]{
-    const tools:Tool[]=[{name:'ark_context',description:'查询本次连接的企业、应用与授权范围；权限由服务端确定。',schema:z.object({}).strict(),readOnly:true,run:async()=>({appId:app,tenantKey:ctx.tenantKey,scopes:grant.scopes,permissions:ctx.permissions.filter(p=>p.startsWith(app+'.')),modelInvocation:false})}];
+    const tools:Tool[]=[{name:'ark_context',description:'查询本次连接的企业、应用与授权范围；权限由服务端确定。',schema:z.object({}).strict(),readOnly:true,run:async()=>{
+      const tenant=await this.db.tenant.findUnique({where:{id:ctx.tenantId},select:{name:true}});
+      return {appId:app,tenantKey:ctx.tenantKey,tenantName:tenant?.name,scopes:grant.scopes,permissions:ctx.permissions.filter(p=>p.startsWith(app+'.')),modelInvocation:false};
+    }}];
     if(supportsDraft(app))tools.push(
       {name:'ark_action_status',description:'查询本连接准备的操作状态与真实业务回执。结果未知时先查询，不重复提交。',schema:z.object({actionId:z.uuid()}).strict(),readOnly:true,run:i=>this.actionStatus(grant,ctx,i.actionId)}
     );
@@ -124,7 +127,11 @@ export class ConnectorBusinessService {
   }
   private async manufacturingStock(ctx: RequestContext, input: { page: number; q: string; warehouseId?: string; alerts: boolean }) {
     const { warehouses, warehouseId, items, total, page, page_size } = await this.manufacturing.stock(ctx, { ...input, alerts: String(input.alerts) });
-    return { warehouses, warehouseId, items, total, page, page_size, hasMore: page * page_size < total, asOf: new Date() };
+    return { warehouses, warehouseId, items: items.map(row=>({
+      ...row, warehouseUnreserved:row.available, safetyStockSuggested:row.suggested,
+    })), total, page, page_size, hasMore: page * page_size < total, asOf: new Date(),
+      quantityNotes:{warehouseUnreserved:'全仓未锁库存，等于实存扣除全部锁库。',safetyStockSuggested:'安全库存建议补货，包含阈值边界并扣除已有覆盖采购。与订单待补不同，不宜直接相加。'},
+    };
   }
 
   private async manufacturingStatus(ctx: RequestContext, id: string) {
@@ -133,7 +140,10 @@ export class ConnectorBusinessService {
       id: order.id, number: order.number, customer: order.customerName, product: order.productName,
       quantity: order.quantity, completedQty: order.completedQty, shippedQty: order.shippedQty,
       dueDate: order.dueDate, bomRevision: order.bomRevision, warehouse: order.warehouse,
-      requirements: order.requirements.slice(0, 100), totalRequirements: order.requirements.length,
+      quantityNotes:{orderAvailable:'本单可用，包含本单已锁数量，扣除其他订单锁库。',orderSuggested:'订单待补，按本单缺口扣减在途和待确认采购。'},
+      requirements: order.requirements.slice(0, 100).map(row=>({
+        ...row,orderAvailable:row.available,orderReserved:row.reserved,orderSuggested:row.suggested,
+      })), totalRequirements: order.requirements.length,
       purchases: order.purchases.slice(-50).map(p => ({ number: p.number, status: p.status, supplier: p.supplier.name })),
       plan: order.plan ? { startDate: order.plan.startDate, dueDate: order.plan.dueDate, status: order.plan.status, ...order.production } : null,
       documents: order.documents.slice(-25).map(d => ({ number: d.number, kind: d.kind, createdAt: d.createdAt })),
@@ -171,6 +181,11 @@ export class ConnectorBusinessService {
       report:report?{
         parserVersion:report.parserVersion,scoreVersion:report.scoreVersion,
         validSamples:report.validSamples,plannedSamples:report.plannedSamples,
+        missingSamples:Math.max(0,report.plannedSamples-report.validSamples),
+        mentionedSamples:report.mentionedSamples,recommendedSamples:report.recommendedSamples,
+        lead:report.score?.diagnosticOnly
+          ? `${report.validSamples}/${report.plannedSamples} 个有效样本 · ${report.score.overallScore} 分仅供诊断 · 本次无法比较`
+          : `${report.validSamples}/${report.plannedSamples} 个有效样本`,
         mentionRate:report.mentionRate,recommendationRate:report.recommendationRate,
         averageRank:report.averageRank,rankSamples:report.rankSamples,
         overallScore:report.score?.overallScore??null,diagnosticOnly:report.score?.diagnosticOnly??null,

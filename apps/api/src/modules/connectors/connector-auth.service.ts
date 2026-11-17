@@ -6,7 +6,7 @@ import type { Prisma } from '../../generated/prisma/client';
 import { PrismaService } from '../prisma.service';
 import { AuthService } from '../platform/auth.service';
 import { readBody } from '../platform/security';
-import { appId, CONNECTOR_APPS, CONNECTOR_NAMES, canExecute, canPrepareDraft, canReadConnector, connectorScopes, publicOrigin, resourceFor, resourceApp, redirectAllowed, oauthError, type ConnectorApp } from './connector-policy';
+import { appId, CONNECTOR_APPS, CONNECTOR_NAMES, canExecute, canPrepareDraft, canReadConnector, connectorScopes, publicOrigin, resourceFor, resourceApp, redirectAllowed, connectorChannel, oauthError, type ConnectorApp } from './connector-policy';
 
 export const connectorHash=(s:string)=>createHash('sha256').update(s).digest('hex');
 const secret=()=>randomBytes(32).toString('base64url');
@@ -46,7 +46,7 @@ export class ConnectorAuthService {
   }
   private async pending(id:string){
     const row=await this.db.connectorAuthorization.findUnique({where:{id}});
-    if(!row||row.expiresAt<=new Date()||row.deniedAt||row.codeHash||row.consumedAt)oauthError('invalid_request','连接请求已失效，请回WorkBuddy重新连接');
+    if(!row||row.expiresAt<=new Date()||row.deniedAt||row.codeHash||row.consumedAt)oauthError('invalid_request','连接请求已失效，请返回发起连接的客户端重新连接');
     return row;
   }
   async consentDetails(req:Request,id:string){
@@ -60,7 +60,7 @@ export class ConnectorAuthService {
     const changed=await this.db.connectorAuthorization.updateMany({where:{id,codeHash:null,deniedAt:null,expiresAt:{gt:new Date()}},data:{consentUserId:user.id,consentHash:connectorHash(nonce)}});
     if(!changed.count)oauthError('invalid_request','连接请求已变化');
     const c=await this.db.connectorClient.findUnique({where:{id:row.clientId}});
-    return {id,appId:app,name:CONNECTOR_NAMES[app],clientName:c?.name??'WorkBuddy',requestedScopes:row.scopes,expiresAt:row.expiresAt,tenants,nonce};
+    return {id,appId:app,name:CONNECTOR_NAMES[app],clientName:c?.name??'外部客户端',requestedScopes:row.scopes,expiresAt:row.expiresAt,tenants,nonce};
   }
   async consent(req:Request,id:string,raw:unknown){
     const user=await this.auth.user(req);
@@ -138,7 +138,15 @@ export class ConnectorAuthService {
     if(!grant||grant.appId!==app||grant.resource!==resourceFor(app))oauthError('invalid_token','凭证不属于当前应用',401);
     const ctx=await this.current(grant);await this.limit(req,'mcp:'+grant!.id,180);
     await this.db.connectorGrant.update({where:{id:grant!.id},data:{lastUsedAt:new Date()}});
-    return {grant:grant!,ctx};
+    const client=await this.db.connectorClient.findUnique({
+      where:{id:grant!.clientId},select:{name:true,redirectUris:true},
+    });
+    const authorization=await this.db.connectorAuthorization.findFirst({
+      where:{grantId:grant!.id,clientId:grant!.clientId,consumedAt:{not:null}},select:{redirectUri:true},
+    });
+    const redirects=Array.isArray(client?.redirectUris)?client.redirectUris:[];
+    const redirect=authorization?.redirectUri??(redirects.length===1&&typeof redirects[0]==='string'?redirects[0]:undefined);
+    return {grant:grant!,ctx,channel:connectorChannel(redirect,client?.name)};
   }
   async revokeToken(req:Request,raw:unknown){
     await this.limit(req,'revoke',60);
@@ -150,7 +158,9 @@ export class ConnectorAuthService {
   async connections(req:Request){
     const user=await this.auth.user(req),grants=await this.db.connectorGrant.findMany({where:{userId:user.id},orderBy:{createdAt:'desc'},take:100});
     const tenants=await this.db.tenant.findMany({where:{id:{in:grants.map(g=>g.tenantId)}},select:{id:true,name:true}});
-    return grants.map(g=>({id:g.id,appId:g.appId,name:CONNECTOR_NAMES[g.appId as ConnectorApp],tenantName:tenants.find(t=>t.id===g.tenantId)?.name??'企业不可用',scopes:g.scopes,expiresAt:g.expiresAt,createdAt:g.createdAt,lastUsedAt:g.lastUsedAt,status:g.revokedAt?'revoked':g.expiresAt<=new Date()?'expired':'active'}));
+    const clients=await this.db.connectorClient.findMany({where:{id:{in:grants.map(g=>g.clientId)}},select:{id:true,name:true}});
+    const clientNames=new Map(clients.map(c=>[c.id,c.name]));
+    return grants.map(g=>({id:g.id,appId:g.appId,name:CONNECTOR_NAMES[g.appId as ConnectorApp],clientName:clientNames.get(g.clientId)??'外部客户端',tenantName:tenants.find(t=>t.id===g.tenantId)?.name??'企业不可用',scopes:g.scopes,expiresAt:g.expiresAt,createdAt:g.createdAt,lastUsedAt:g.lastUsedAt,status:g.revokedAt?'revoked':g.expiresAt<=new Date()?'expired':'active'}));
   }
   async revokeConnection(req:Request,id:string){
     const user=await this.auth.user(req),g=await this.db.connectorGrant.findFirst({where:{id,userId:user.id}});if(!g)throw new NotFoundException('授权不存在');

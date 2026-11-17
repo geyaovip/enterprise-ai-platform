@@ -48,3 +48,9 @@ export function redirectAllowed(raw:string) {
     return u.protocol==='http:'&&u.hostname==='127.0.0.1'&&Number(u.port)>=1024&&u.pathname==='/oauth/callback';
   }catch{return false;}
 }
+
+export function connectorChannel(redirectUri: string | undefined, clientName?: string) {
+  if (!redirectUri || !redirectAllowed(redirectUri)) return 'external';
+  if (new URL(redirectUri).protocol === 'workbuddy:') return 'workbuddy';
+  return /^DeepSeek Harness · 知行方舟(?:\s|$)/u.test(clientName ?? '') ? 'deepseek_harness' : 'loopback';
+}

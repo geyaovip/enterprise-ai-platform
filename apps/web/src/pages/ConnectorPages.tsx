@@ -19,9 +19,15 @@ export function ConnectorAuthorizePage(){
   useEffect(()=>{if(details.data?.tenants.length)setTenant(details.data.tenants[0].key);setExecution(false);},[details.data]);
   const selected=details.data?.tenants.find(t=>t.key===tenant),draftRequested=details.data?.requestedScopes.includes(details.data.appId+'.draft');
   const executionRequested=details.data?.requestedScopes.includes(details.data.appId+'.execute');
-  const readOnlyDescription=details.data?.appId==='content'
-    ? '查询当前岗位有权查看的内容项目和素材信息。'
-    : details.data?.appId==='geo'?'查询当前岗位有权查看的 GEO 项目和已有分析报告。':details.data?.appId==='manufacturing'?'查询当前岗位有权查看的制造订单、库存预警、生产进度和批次追溯。':null;
+  const readOnlyDescriptions: Record<string,string>={
+    content:'查询内容项目和素材信息。',
+    geo:'查询 GEO 项目和已有分析报告。',
+    manufacturing:'查询制造订单、库存预警、生产进度和批次追溯。',
+    erp:'查询库存、采购单和销售合同。',
+    crm:'查询岗位授权范围内的客户、线索、商机和跟进。',
+    mes:'查询工单、报工记录和物料清单。',
+  };
+  const clientName=details.data?.clientName?.trim()||'外部客户端';
   const submit=async(decision:'allow'|'deny')=>{
     if(!id||!details.data||busy)return;setBusy(true);setError(null);
     try{const r=await api.post<{redirect:string}>('/connect/requests/'+encodeURIComponent(id),{nonce:details.data.nonce,decision,...(tenant?{tenantKey:tenant}:{}),allowDraft:Boolean(draft&&draftRequested&&selected?.draftAllowed),...(executionRequested?{allowExecution:Boolean(execution&&selected?.executionAllowed)}:{})});window.location.assign(r.redirect);}
@@ -29,13 +35,13 @@ export function ConnectorAuthorizePage(){
   };
   return <Frame title={details.data?'连接 '+details.data.name:'连接应用'}>
     <Notice text={error??details.error}/>
-    {!id?<Notice text="连接请求不完整，请回 WorkBuddy 重新连接。"/>:details.loading&&!details.data?<Loading/>:details.data&&<>
-      <p>连接后，WorkBuddy 可以按你当前的业务权限使用这个应用。请确认这是你刚发起的连接。</p>
+    {!id?<Notice text="连接请求不完整，请返回发起连接的客户端重新连接。"/>:details.loading&&!details.data?<Loading/>:details.data&&<>
+      <p>发起客户端：<strong>{clientName}</strong>。请核对这是你刚发起的连接，再选择要授权的企业。</p>
       <ChoiceSelect label="授权企业" value={tenant} onChange={e=>{setTenant(e.target.value);setExecution(false);}} disabled={busy||!details.data.tenants.length}>{!details.data.tenants.length&&<option value="">暂无可授权企业</option>}{details.data.tenants.map(t=><option key={t.key} value={t.key}>{t.name}</option>)}</ChoiceSelect>
       {!details.data.tenants.length&&<p>当前没有可使用该应用的企业。你可以<Link to="/onboarding">创建或加入企业</Link>，或联系管理员分配岗位后重新连接。</p>}
-      <div className="connector-permissions"><h2>允许访问</h2><p>{readOnlyDescription??'查询当前岗位有权查看的业务数据，计算业务预览。'}</p>
+      <div className="connector-permissions"><h2>允许访问</h2><p>只读访问：{readOnlyDescriptions[details.data.appId]??'查询当前岗位有权查看的业务数据。'}</p>
       {draftRequested&&<label><input type="checkbox" checked={draft&&Boolean(selected?.draftAllowed)} onChange={e=>setDraft(e.target.checked)} disabled={busy||!selected?.draftAllowed}/>准备业务草稿；每次保存仍需你确认</label>}
-      {executionRequested&&<label><input type="checkbox" checked={execution&&Boolean(selected?.executionAllowed)} onChange={e=>setExecution(e.target.checked)} disabled={busy||!selected?.executionAllowed}/>{details.data.appId==='content'?'在 WorkBuddy 中提交图片或视频生成':'在 WorkBuddy 中提交 GEO 分析'}，可能产生模型费用</label>}
+      {executionRequested&&<label><input type="checkbox" checked={execution&&Boolean(selected?.executionAllowed)} onChange={e=>setExecution(e.target.checked)} disabled={busy||!selected?.executionAllowed}/>{details.data.appId==='content'?'允许提交图片或视频生成':'允许提交 GEO 分析'}，可能产生模型费用</label>}
       <p className="muted">授权仅针对所选企业和应用，有效期最长30天。可以随时撤销；成员或业务权限变化后按最新权限执行。</p></div>
       <div className="connector-actions"><button className="primary" disabled={busy||!selected} onClick={()=>void submit('allow')}>{busy?'正在处理…':'同意并连接'}</button><button disabled={busy} onClick={()=>void submit('deny')}>取消连接</button></div>
     </>}
@@ -66,11 +72,11 @@ export function ConnectorActionPage(){
   </>}</Frame>;
 }
 
-type Connection={id:string;name:string;tenantName:string;scopes:string[];status:string;expiresAt:string;lastUsedAt:string|null};
+type Connection={id:string;name:string;clientName?:string;tenantName:string;scopes:string[];status:string;expiresAt:string;lastUsedAt:string|null};
 export function ConnectorConnectionsPage(){
   const data=useApiData<Connection[]>('/connect/connections'),[selected,setSelected]=useState<Connection|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState<string|null>(null);
   const revoke=async()=>{if(!selected||busy)return;setBusy(true);try{await api.post('/connect/connections/'+selected.id+'/revoke',{});setSelected(null);await data.reload();}catch(e){setError(errorText(e));}finally{setBusy(false);}};
-  return <Frame title="已连接应用"><Notice text={error??data.error}/>{data.loading&&!data.data?<Loading/>:!data.data?.length?<p>还没有连接外部应用。可以在 WorkBuddy 中添加对应的知行方舟连接器。</p>:<div className="connector-list">{data.data.map(c=><article key={c.id}><div><h2>{c.name}</h2><p>{c.tenantName} · {c.status==='active'?'已授权':c.status==='revoked'?'已撤销':'已过期'}</p><p className="muted">权限：查询业务{c.scopes.some(s=>s.endsWith('.draft'))?'、准备草稿':''} · 有效期至{new Date(c.expiresAt).toLocaleDateString('zh-CN')}</p>{c.lastUsedAt&&<p className="muted">最近使用：{new Date(c.lastUsedAt).toLocaleString('zh-CN')}</p>}</div>{c.status==='active'&&<button onClick={()=>{setError(null);setSelected(c);}}>撤销授权</button>}</article>)}</div>}
-    <ConfirmDialog open={!!selected} confirmLabel="撤销授权" title="撤销连接授权" description={<p>撤销{selected?.tenantName}的{selected?.name}授权后，WorkBuddy 将无法继续通过这项连接访问业务。</p>} busy={busy} error={error} onCancel={()=>setSelected(null)} onConfirm={()=>void revoke()}/>
+  return <Frame title="已连接应用"><Notice text={error??data.error}/>{data.loading&&!data.data?<Loading/>:!data.data?.length?<p>还没有连接外部应用。请在你使用的客户端添加对应的知行方舟插件或连接器。</p>:<div className="connector-list">{data.data.map(c=><article key={c.id}><div><h2>{c.name}</h2><p>{c.tenantName} · {c.clientName||'外部客户端'} · {c.status==='active'?'已授权':c.status==='revoked'?'已撤销':'已过期'}</p><p className="muted">权限：查询业务{c.scopes.some(s=>s.endsWith('.draft'))?'、准备草稿':''} · 有效期至{new Date(c.expiresAt).toLocaleDateString('zh-CN')}</p>{c.lastUsedAt&&<p className="muted">最近使用：{new Date(c.lastUsedAt).toLocaleString('zh-CN')}</p>}</div>{c.status==='active'&&<button onClick={()=>{setError(null);setSelected(c);}}>撤销授权</button>}</article>)}</div>}
+    <ConfirmDialog open={!!selected} confirmLabel="撤销授权" title="撤销连接授权" description={<p>撤销{selected?.tenantName}的{selected?.name}授权后，{selected?.clientName||'该客户端'}将无法继续通过这项连接访问业务。</p>} busy={busy} error={error} onCancel={()=>setSelected(null)} onConfirm={()=>void revoke()}/>
   </Frame>;
 }

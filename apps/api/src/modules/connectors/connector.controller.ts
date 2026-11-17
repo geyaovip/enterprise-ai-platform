@@ -50,9 +50,17 @@ export class ConnectorController {
           const available=this.business.tools(app,actor.grant,fresh).find(t=>t.name===tool.name);
           if(!available)throw new HttpException('当前工具权限已变化',403);
           const result=JSON.parse(JSON.stringify(await available.run(input)));
-          await this.access.db.auditEvent.create({data:{tenantId:fresh.tenantId,userId:fresh.userId,membershipId:fresh.membershipId,appId:app,requestId:fresh.requestId,action:app+'.connector.tool',resourceType:'ConnectorGrant',resourceId:actor.grant.id,detail:{tool:tool.name,channel:'workbuddy'}}});
+          await this.access.db.auditEvent.create({data:{tenantId:fresh.tenantId,userId:fresh.userId,membershipId:fresh.membershipId,appId:app,requestId:fresh.requestId,action:app+'.connector.tool',resourceType:'ConnectorGrant',resourceId:actor.grant.id,detail:{tool:tool.name,channel:actor.channel,clientId:actor.grant.clientId}}});
           return {content:[{type:'text' as const,text:JSON.stringify(result)}],structuredContent:typeof result==='object'&&!Array.isArray(result)&&result!==null?result:{result}};
-        }catch(e){const status=e instanceof HttpException?e.getStatus():500,r=e instanceof HttpException?e.getResponse():null,p=typeof r==='object'&&r!==null?r as any:{};return {isError:true,content:[{type:'text' as const,text:JSON.stringify({code:p.code??(status===403||status===401?'FORBIDDEN':status===409?'CONFLICT':status===400?'INVALID_INPUT':'UNAVAILABLE'),message:status>=500?'服务暂不可用，请先回查操作状态':typeof r==='string'?r:p.message??'请求未完成，请核对权限和参数'})}]};}
+        }catch(e){
+          const status=e instanceof HttpException?e.getStatus():500;
+          const r=e instanceof HttpException?e.getResponse():null;
+          const payload=typeof r==='object'&&r!==null?r as {code?:unknown;message?:unknown}:{};
+          const fallback=status===401||status===403?'FORBIDDEN':status===404?'NOT_FOUND':status===409?'CONFLICT':status===400||status===422?'INVALID_INPUT':'UNAVAILABLE';
+          const code=typeof payload.code==='string'?payload.code:fallback;
+          const message=status>=500?'服务暂不可用，请稍后重试。':typeof r==='string'?r:typeof payload.message==='string'?payload.message:'请求未完成，请核对权限或查询条件。';
+          return {isError:true,content:[{type:'text' as const,text:JSON.stringify({code,message})}]};
+        }
       });
     }
     const transport=new StreamableHTTPServerTransport({sessionIdGenerator:undefined,enableJsonResponse:true});

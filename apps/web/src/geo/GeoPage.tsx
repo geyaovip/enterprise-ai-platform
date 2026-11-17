@@ -1470,13 +1470,14 @@ function Report({
                   <span>{SAMPLE_SOURCE}</span>
                   {diagnostic && (
                     <span className="geo-state geo-state-needs_review">
-                      样本不足 · 仅供诊断
+                      {report.validSamples}/{report.plannedSamples} 个有效样本 · 仅供诊断
                     </span>
                   )}
                   {r.retestVersionCurrent === false && (
                     <span className="geo-state">旧口径</span>
                   )}
                 </div>
+                {r.retestComparisonBlock && <p className="geo-consequence">暂不可比较：{r.retestComparisonBlock}</p>}
                 <div className="geo-stats">
                   <Stat
                     title={diagnostic ? "品牌提及" : "品牌提及率"}

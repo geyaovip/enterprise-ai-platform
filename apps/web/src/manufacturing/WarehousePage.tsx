@@ -54,8 +54,8 @@ export function WarehousePage({ tenantKey, permissions }: { tenantKey: string; p
     </div>
     <Search label="搜索物料编码或名称" value={q} onChange={value => { setQ(value); setPage(1); }}/>
     <DataResult {...request}>
-      {data?.items.length ? <section className="panel table-wrap"><table>
-        <thead><tr><th>物料</th><th>实存</th><th>锁定</th><th>可用</th><th>安全库存</th><th>建议补货</th><th>状态</th>{(admin || stock || buy) && <th>操作</th>}</tr></thead>
+      {data?.items.length ? <section className="panel table-wrap"><p className="muted">全仓未锁库存为实存减去全部锁库。安全库存建议与制造订单待补分别核对。</p><table>
+        <thead><tr><th>物料</th><th>实存</th><th>锁定</th><th>全仓未锁库存</th><th>安全库存</th><th>安全库存建议补货</th><th>状态</th>{(admin || stock || buy) && <th>操作</th>}</tr></thead>
         <tbody>{data.items.map(row => <tr key={row.id}>
           <td>{row.sku} · {row.name}（{row.unit}）</td><td>{amount(row.physical)}</td><td>{amount(row.reserved)}</td>
           <td>{amount(row.available)}</td><td>{amount(row.reorderPoint)}</td><td>{amount(row.suggested)}</td>

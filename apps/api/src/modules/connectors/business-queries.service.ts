@@ -23,13 +23,23 @@ export class ConnectorBusinessQueries {
  async followUps(c:RequestContext,i:any){return paged(await this.master.opportunityFollowups(c,i.id,i),['id','opportunityId','actorName','note','nextActionAt','createdAt']);}
  async purchaseList(c:RequestContext,i:any){return {...paged(await this.purchase.list(c,i),[...documents,'supplier']),currency:'CNY'};}
  async salesList(c:RequestContext,i:any){return {...paged(await this.sales.list(c,i),[...documents,'customer']),currency:'CNY'};}
- async document(c:RequestContext,kind:'purchase'|'sales',id:string){const r:any=await(kind==='purchase'?this.purchase.get(c,id):this.sales.get(c,id));return {...fields(r,documents),...fields(r,['customer','supplier','opportunity']),lines:r.lines.map((l:any)=>fields(l,['id','productId','sku','name','quantity','unitPrice','lineTotal','unitFactor','receivedQty','shippedQty','baseUnit','unit','taxRate','taxAmount'])),currency:'CNY',asOf:new Date(),notice:'状态、数量与应收应付分开判断；确认单据不等于已入库、发货或收付款。'};}
+ async document(c:RequestContext,kind:'purchase'|'sales',id:string){const r:any=await(kind==='purchase'?this.purchase.get(c,id):this.sales.get(c,id));return {...fields(r,documents),...fields(r,['customer','supplier','opportunity']),lines:r.lines.map((l:any)=>({
+  ...fields(l,['id','productId','sku','name','quantity','unitPrice','lineTotal','unitFactor','receivedQty','shippedQty','baseUnit','unit','taxRate','taxAmount']),
+  ...(kind==='purchase'?{remainingToReceive:Math.max(0,new Prisma.Decimal(l.quantity).minus(l.receivedQty??0).toNumber())}
+    :{remainingToShip:Math.max(0,new Prisma.Decimal(l.quantity).minus(l.shippedQty??0).toNumber())}),
+ })),currency:'CNY',asOf:new Date(),notice:'状态、数量与应收应付分开判断；确认单据不等于已入库、发货或收付款。'};}
  async balances(c:RequestContext,i:any){return {...paged(await this.inventory.balances(c,i),['id','productId','product','quantity','warehouseQuantity','reservedQty','availableQty','lowStock']),warehouseId:i.warehouseId??null,notice:'quantity/availableQty为企业汇总；warehouseQuantity仅在指定仓库时有值。'};}
  async movements(c:RequestContext,i:any){return {...paged(await this.inventory.movements(c,i),['id','productId','product','direction','quantity','sourceType','sourceId','documentId','warehouseId','unitCost','costAmount','costEstimated','tradeAmount','createdAt']),currency:'CNY'};}
  async accounts(c:RequestContext,i:any){const r:any=await(i.kind==='receivables'?this.finance.receivables(c,i):this.finance.payables(c,i));return {...paged(r,[],),items:r.items.map((x:any)=>({...fields(x,['id','customerId','supplierId','partyName','contract','order','amount','paidAmount','status','dueAt','createdAt','updatedAt']),outstandingAmount:new Prisma.Decimal(x.amount).minus(x.paidAmount).toFixed(2)})),currency:'CNY',notice:'未结额=账款金额-已结金额；不返回付款凭据、银行或联系人字段，不执行收付款。'};}
  async mesList(c:RequestContext,i:any){const r=await this.mes.list(c,i.type,i);return paged(r,i.type==='materials'?material:i.type==='boms'?bom:i.type==='reports'?report:i.type==='orders'?order:plan);}
  async mesInspect(c:RequestContext,i:any){const r:any=await this.mes.get(c,i.type,i.id),keys=i.type==='material'?material:i.type==='bom'?bom:i.type==='report'?report:i.type==='order'?order:plan,result:any={...fields(r,keys),asOf:new Date()};
-  if(i.type==='order'){result.plan=fields(r.plan,['id','code','productName','productSku','dueAt','status','version']);result.reports=r.reports.slice(0,50).map((x:any)=>fields(x,report));result.relatedRecords={type:'reports',total:r.reports.length,returned:result.reports.length,truncated:r.reports.length>50,nextQuery:{tool:'mes_list_records',type:'reports',orderId:i.id,page:1,page_size:20}};}
+  if(i.type==='order'){
+   const pending=r.reports.filter((x:any)=>x.status==='pending');
+   result.progress={targetQty:r.targetQty,approvedGoodQty:r.goodQty,approvedDefectQty:r.defectQty,
+     visiblePendingGoodQty:pending.reduce((sum:number,x:any)=>sum+x.goodQty,0),
+     visiblePendingDefectQty:pending.reduce((sum:number,x:any)=>sum+x.defectQty,0),
+     visiblePendingReports:pending.length,note:'已审核为工单汇总；待审仅包含当前岗位可见报工，不计入完工。'};
+   result.plan=fields(r.plan,['id','code','productName','productSku','dueAt','status','version']);result.reports=r.reports.slice(0,50).map((x:any)=>fields(x,report));result.relatedRecords={type:'reports',total:r.reports.length,returned:result.reports.length,truncated:r.reports.length>50,nextQuery:{tool:'mes_list_records',type:'reports',orderId:i.id,page:1,page_size:20}};}
   if(i.type==='plan'){result.orders=r.orders.slice(0,50).map((x:any)=>fields(x,order));result.relatedRecords={type:'orders',total:r.orders.length,returned:result.orders.length,truncated:r.orders.length>50,nextQuery:{tool:'mes_list_records',type:'orders',planId:i.id,page:1,page_size:20}};}
   if(i.type==='bom')result.review=r.review?fields(r.review,['id','bomId','bomVersion','findings','decisions','createdAt','version']):null;
   return result;
