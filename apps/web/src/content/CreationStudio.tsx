@@ -19,6 +19,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   ArrowUpIcon,
+  ArrowRightIcon,
   ArrowLeftIcon,
   ImageIcon,
   PlusIcon,
@@ -56,6 +57,7 @@ import {
   type ReferenceImage,
 } from "./ReferenceAttachment";
 import "./studio.css";
+import { CollectionEmpty, CollectionSearch } from "./ContentCollection";
 
 type Size = "square" | "portrait" | "story";
 const ratios = { square: "1:1", portrait: "3:4", story: "9:16" };
@@ -152,11 +154,11 @@ export function ContentExplore() {
       (entry.title + entry.prompt).includes(query.trim()),
   );
   return (
-    <section className="studio-explore">
+    <section className="studio-explore content-collection">
       <PageTitle title="探索" />
       <Notice text={action.error} />
-      <div className="content-asset-toolbar">
-        <div className="form-actions" role="group" aria-label="模板类型">
+      <div className="content-collection-toolbar">
+        <div className="content-collection-segments" role="group" aria-label="模板类型">
           {(["image", "video"] as const).map((mode) => (
             <button
               key={mode}
@@ -178,17 +180,15 @@ export function ContentExplore() {
             <option key={name}>{name}</option>
           ))}
         </DropdownSelect>
-        <input
-          type="search"
-          aria-label="搜索创作模板"
-          placeholder="搜索创作模板"
-          value={query}
-          onChange={(event) => setQuery(event.target.value)}
-        />
+        <CollectionSearch label="搜索创作模板" value={query} maxLength={100} onChange={(event) => setQuery(event.target.value)} />
       </div>
-      <div className="content-grid">
-        {entries.map(({ title, prompt, mode }) => (
-          <article className="panel content-document" key={title}>
+      <div className="content-template-grid">
+        {entries.map(({ title, prompt, mode, useCase }) => (
+          <article className="content-template-card" key={title}>
+            <div className="content-template-label">
+              <span aria-hidden="true">{mode === "image" ? <ImageIcon size={21} /> : <FilmSlateIcon size={21} />}</span>
+              <small>{useCase}</small>
+            </div>
             <h2>{title}</h2>
             <p>{prompt}</p>
             {canCreate && (
@@ -214,13 +214,13 @@ export function ContentExplore() {
                   })
                 }
               >
-                使用提示词
+                使用提示词 <ArrowRightIcon size={15} aria-hidden="true" />
               </button>
             )}
           </article>
         ))}
-        {entries.length === 0 && <p role="status">没有匹配的创作模板</p>}
       </div>
+      {entries.length === 0 && <CollectionEmpty text="没有匹配的创作模板" icon={FolderOpenIcon} />}
     </section>
   );
 }
@@ -1027,8 +1027,10 @@ function StudioScreen({ id, tool }: { id: string; tool?: GuidedMediaTool }) {
         </div>
       ) : (
         <section className={tool ? "studio-welcome studio-guided-welcome" : "studio-welcome"}>
-          <h1>{tool?.name ?? (imageMode ? "图片创作" : "视频创作")}</h1>
-          {tool && <p>{tool.description}</p>}
+          {tool ? <div className="content-tool-hero" data-category={tool.category}>
+            <span className="content-tool-icon"><tool.icon size={26} aria-hidden="true" /></span>
+            <div><h1>{tool.name}</h1><p>{tool.description}</p></div>
+          </div> : <h1>{imageMode ? "图片创作" : "视频创作"}</h1>}
         </section>
       )}
       <section className="studio-composer-wrap" aria-label="创作输入">

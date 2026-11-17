@@ -1,4 +1,4 @@
-import { PlayCircleIcon } from "@phosphor-icons/react";
+import { ArchiveBoxIcon, BuildingOfficeIcon, ClipboardTextIcon, IdentificationCardIcon, ImageIcon, PlayCircleIcon, PlusIcon } from "@phosphor-icons/react";
 import { mediaActive, type MediaMode } from "./MediaOptions";
 import {
   Context,
@@ -50,6 +50,7 @@ import {
   ChoiceSelect,
 } from "../components";
 import "./content.css";
+import { CollectionEmpty, CollectionSearch, CollectionThumbnail } from "./ContentCollection";
 import { ContentExplore, CreationStudio } from "./CreationStudio";
 import { CanvasHome, CanvasList, ContentCanvas, putImageOnCanvas } from "./ContentCanvas";
 import { ContentTools, StandaloneTool } from "./ContentTools";
@@ -475,7 +476,7 @@ function Documents({ kind }: { kind: "brand" | "product" }) {
   const canReference =
     writable && c.meta.permissions.includes("content.ai.use");
   return (
-    <>
+    <section className="content-collection content-subject-library">
       <PageTitle
         title={kind === "brand" ? "品牌中心" : "主体"}
         action={
@@ -485,42 +486,28 @@ function Documents({ kind }: { kind: "brand" | "product" }) {
             )}
             {writable && (
               <button className="primary" onClick={() => setEditing(null)}>
-                新建{kind === "brand" ? "品牌" : "主体"}
+                <PlusIcon size={17} aria-hidden="true" /> 新建{kind === "brand" ? "品牌" : "主体"}
               </button>
             )}
           </>
         }
       />
-      <input
-        type="search"
-        aria-label={kind === "brand" ? "搜索品牌" : "搜索主体"}
-        placeholder={kind === "brand" ? "搜索品牌" : "搜索主体"}
-        maxLength={100}
-        value={q}
-        onChange={(e) => {
-          setQ(e.target.value);
-          setPage(1);
-        }}
-      />
+      <div className="content-collection-toolbar">
+        <CollectionSearch label={kind === "brand" ? "搜索品牌" : "搜索主体"} value={q} maxLength={100}
+          onChange={(event) => { setQ(event.target.value); setPage(1); }} />
+      </div>
       <Notice text={a.error} />
       <Result result={r}>
-        <div className="content-grid">
+        <div className="content-subject-grid">
           {r.data?.items.map((d: any) => (
-            <article className="panel content-document" key={d.id}>
-              {(d.data.imageId || d.data.logoId) && (
-                <img
-                  src={
-                    "/api/v1" +
-                    c.base +
-                    "/assets/" +
-                    (d.data.imageId || d.data.logoId) +
-                    "/file"
-                  }
-                  alt={d.name}
-                />
-              )}
+            <article className="content-subject-card" key={d.id}>
+              <div className="content-subject-thumb">
+                {d.data.imageId || d.data.logoId ? (
+                  <CollectionThumbnail src={"/api/v1" + c.base + "/assets/" + (d.data.imageId || d.data.logoId) + "/thumbnail"} />
+                ) : kind === "brand" ? <BuildingOfficeIcon aria-hidden="true" size={22} /> : <IdentificationCardIcon aria-hidden="true" size={22} />}
+              </div>
               <h2>{d.name}</h2>
-              <p>{kind === "brand" ? d.data.tone : d.data.sellingPoints}</p>
+              {(kind === "brand" ? d.data.tone : d.data.sellingPoints) && <p>{kind === "brand" ? d.data.tone : d.data.sellingPoints}</p>}
               {kind === "brand" && (
                 <small>
                   v{d.version} ·{" "}
@@ -577,7 +564,7 @@ function Documents({ kind }: { kind: "brand" | "product" }) {
           ))}
         </div>
         {r.data?.items.length === 0 && (
-          <Empty text={kind === "brand" ? "暂无品牌" : "暂无主体"} />
+          <CollectionEmpty icon={IdentificationCardIcon} text={q.trim() ? "没有匹配的记录" : kind === "brand" ? "暂无品牌" : "暂无主体"} />
         )}
         <Pager result={r} page={page} setPage={setPage} />
       </Result>
@@ -588,7 +575,7 @@ function Documents({ kind }: { kind: "brand" | "product" }) {
         onClose={() => setEditing(undefined)}
         onSaved={r.reload}
       />
-    </>
+    </section>
   );
 }
 const blankData = {
@@ -1658,7 +1645,7 @@ function Assets({
     />
   );
   return (
-    <>
+    <div className={embedded ? undefined : "content-collection content-asset-library"}>
       {embedded ? (
         <div className="content-library-header">{tools}</div>
       ) : (
@@ -1905,17 +1892,7 @@ function Assets({
                     {asset.mime === "video/mp4" ? (
                       <PlayCircleIcon size={38} aria-hidden="true" />
                     ) : (
-                      <img
-                        src={
-                          "/api/v1" +
-                          c.base +
-                          "/assets/" +
-                          asset.id +
-                          "/thumbnail"
-                        }
-                        loading="lazy"
-                        alt=""
-                      />
+                      <CollectionThumbnail src={"/api/v1" + c.base + "/assets/" + asset.id + "/thumbnail"} />
                     )}
                   </button>
                   <label className="content-asset-check">
@@ -1934,9 +1911,7 @@ function Assets({
           })}
         </div>
         {r.data?.items.length === 0 && (
-          <Empty
-            text={query || media || days ? "没有匹配的素材" : "暂无素材"}
-          />
+          <CollectionEmpty icon={ImageIcon} text={query || media || days ? "没有匹配的素材" : "暂无素材"} />
         )}
         <Pager
           result={r}
@@ -2000,14 +1975,14 @@ function Assets({
           }}
         />
       )}
-    </>
+    </div>
   );
 }
 function Templates() {
   const c = useContent(),
     r = useApiData<any>(c.base + "/documents/template");
   return (
-    <>
+    <section className="content-collection">
       <PageTitle title="版式模板" />
       <Result result={r}>
         {r.data?.items.length > 0 && (
@@ -2036,7 +2011,7 @@ function Templates() {
           </article>
         ))}
       </div>
-    </>
+    </section>
   );
 }
 function Trash() {
@@ -2045,12 +2020,12 @@ function Trash() {
     r = usePagedCollection<any>(c.base + "/trash", page),
     a = useAction();
   return (
-    <>
+    <section className="content-collection">
       <PageTitle title="回收站" />
       <Notice text={a.error} />
       <Result result={r}>
         <Pager result={r.pagination} page={page} setPage={setPage} />
-        {r.data?.length === 0 && <Empty text="回收站为空" />}
+        {r.data?.length === 0 && <CollectionEmpty icon={ArchiveBoxIcon} text="回收站为空" />}
         {r.data?.map((p) => (
           <article className="panel content-task-row" key={p.id}>
             <div>
@@ -2072,7 +2047,7 @@ function Trash() {
           </article>
         ))}
       </Result>
-    </>
+    </section>
   );
 }
 const contentUsageMetrics: Record<string, [string, string]> = {
@@ -2111,7 +2086,7 @@ function Settings() {
     });
   useEffect(() => setSettings(c.meta.settings), [c.meta.settings]);
   return (
-    <>
+    <section className="content-collection">
       <PageTitle title="内容设置" />
       <Notice text={a.error} />
       <section className="panel">
@@ -2328,7 +2303,7 @@ function Settings() {
         onCancel={() => setConfirm(false)}
         onConfirm={save}
       />
-    </>
+    </section>
   );
 }
 
@@ -2337,10 +2312,10 @@ function Reviews() {
     [page, setPage] = useState(1),
     r = useApiData<any>(c.base + "/reviews?page=" + page);
   return (
-    <>
+    <section className="content-collection">
       <PageTitle title="审核任务" />
       <Result result={r}>
-        {r.data?.items.length === 0 && <Empty text="没有待审核作品" />}
+        {r.data?.items.length === 0 && <CollectionEmpty icon={ClipboardTextIcon} text="没有待审核作品" />}
         <div className="content-grid">
           {r.data?.items.map((x: any) => (
             <Link
@@ -2366,6 +2341,6 @@ function Reviews() {
         </div>
         <Pager result={r} page={page} setPage={setPage} />
       </Result>
-    </>
+    </section>
   );
 }

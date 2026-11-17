@@ -13,6 +13,7 @@ import {
   type ClipOptions,
 } from "./MediaOptions";
 import { EntitySelect } from "../components";
+import { CollectionEmpty, CollectionSearch } from "./ContentCollection";
 import {
   useEffect,
   useRef,
@@ -160,7 +161,7 @@ export function CanvasList() {
     }
   };
   return (
-    <>
+    <section className="content-collection content-asset-library">
       <AssetLibraryHeader>
         <LibrarySearchActions
           label="搜索画布"
@@ -341,9 +342,7 @@ export function CanvasList() {
             })}
           </div>
           {rows.data?.total === 0 && (!canCreate || selecting || q || days || visibility) && (
-            <div className="canvas-empty">
-              {q || days || visibility ? "未找到画布" : "暂无画布"}
-            </div>
+            <CollectionEmpty icon={ArrowsOutIcon} text={q || days || visibility ? "未找到画布" : "暂无画布"} />
           )}
           <Pager result={rows} page={page} setPage={resetList} />
         </Result>
@@ -356,7 +355,7 @@ export function CanvasList() {
           } />
         )}
       </div>
-    </>
+    </section>
   );
 }
 
@@ -409,7 +408,7 @@ export function CanvasHome() {
   return (
     <div className="creation-studio canvas-home">
       <CreativeTabs mode="canvas" />
-      <section className="canvas-home-projects" aria-labelledby="canvas-home-title">
+      <section className="canvas-home-projects content-collection" aria-labelledby="canvas-home-title">
         <header>
           <h1 id="canvas-home-title">创作画布</h1>
           {meta.permissions.includes("content.create") && (
@@ -418,11 +417,12 @@ export function CanvasHome() {
             </button>
           )}
         </header>
-        <input type="search" aria-label="搜索画布" placeholder="搜索画布"
-          maxLength={100} value={query} onChange={(event) => {
+        <div className="content-collection-toolbar">
+          <CollectionSearch label="搜索画布" maxLength={100} value={query} onChange={(event) => {
             setQuery(event.target.value);
             setPage(1);
           }} />
+        </div>
         <Result result={rows}>
           {rows.data?.items.length ? (
             <div className="canvas-cards">
@@ -434,7 +434,7 @@ export function CanvasHome() {
                 </Link>
               ))}
             </div>
-          ) : <p className="canvas-empty">{query.trim() ? "未找到画布" : "暂无画布"}</p>}
+          ) : <CollectionEmpty icon={ArrowsOutIcon} text={query.trim() ? "未找到画布" : "暂无画布"} />}
           <Pager result={rows} page={page} setPage={setPage} />
         </Result>
       </section>

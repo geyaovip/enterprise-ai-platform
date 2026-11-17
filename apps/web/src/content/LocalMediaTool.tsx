@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { Field, Notice } from "../components";
+import { Notice } from "../components";
 import { ImageRegionDialog, type EditRegion } from "./ImageRegionDialog";
 import { frameData, type FramePosition } from "./VideoFrameDialog";
 import { useAction } from "./content-ui";
+import { FilmSlateIcon, FolderOpenIcon, ImageIcon } from "@phosphor-icons/react";
+import { ToolFilePicker, ToolPanelHeading } from "./ToolForm";
 
 const limit = 24_000_000;
 type Result = { url: string; label: string };
@@ -29,19 +31,20 @@ export function LocalMediaTool({ operation }: { operation: "image" | "frame" }) 
   const image = operation === "image";
   return (
     <div className="content-local-tool">
-      <Field label={image ? "选择本地图片" : "选择本地视频"}>
-        <input type="file" accept={image ? "image/png,image/jpeg,image/webp" : "video/mp4,video/webm"}
-          onChange={(event) => {
-            const next = event.target.files?.[0];
-            event.target.value = "";
-            if (!next) return;
+      <ToolPanelHeading title="本地素材" icon={FolderOpenIcon} />
+      <div className="tool-panel-body">
+        <ToolFilePicker label={image ? "选择本地图片" : "选择本地视频"}
+          hint={image ? "PNG / JPEG / WebP · 仅在浏览器处理" : "MP4 / WebM · 仅在浏览器处理"}
+          icon={image ? ImageIcon : FilmSlateIcon}
+          accept={image ? "image/png,image/jpeg,image/webp" : "video/mp4,video/webm"}
+          selected={file?.name} onPick={(next) => {
             const valid = (image ? /^image\/(png|jpeg|webp)$/ : /^video\/(mp4|webm)$/).test(next.type);
             setError(valid ? "" : image ? "请选择 PNG、JPEG 或 WebP 图片" : "请选择 MP4 或 WebM 视频");
             if (valid) setFile(next);
-          }} />
-      </Field>
-      <Notice text={error} />
-      {file && url && <MediaEditor key={url} operation={operation} name={file.name} url={url} />}
+          }} onClear={() => { setFile(undefined); setError(""); }} />
+        <Notice text={error} />
+        {file && url && <MediaEditor key={url} operation={operation} name={file.name} url={url} />}
+      </div>
     </div>
   );
 }

@@ -6,7 +6,7 @@ import {
   MagnifyingGlassIcon,
   XIcon,
 } from "@phosphor-icons/react";
-import { RecordActions } from "../components";
+import { PageTitle, RecordActions } from "../components";
 import { useContent } from "./content-context";
 
 export function AssetLibraryHeader({ children }: { children: ReactNode }) {
@@ -14,16 +14,8 @@ export function AssetLibraryHeader({ children }: { children: ReactNode }) {
   const { pathname } = useLocation();
   useEffect(() => { document.title = `${pathname.endsWith("/canvases") ? "画布资产" : "生成历史"} · 知行方舟`; }, [pathname]);
   return (
-    <header className="content-library-header">
-      <h1 className="sr-only">资产</h1>
-      <nav className="content-library-nav" aria-label="资产视图">
-        <NavLink end to={prefix + "/assets"}>
-          生成历史
-        </NavLink>
-        <NavLink end to={prefix + "/assets/canvases"}>
-          画布
-        </NavLink>
-      </nav>
+    <header className="content-library-header content-library-heading">
+      <PageTitle title="资产" action={
       <div className="content-library-actions">
         {children}
         <RecordActions
@@ -39,7 +31,11 @@ export function AssetLibraryHeader({ children }: { children: ReactNode }) {
             </>
           }
         />
-      </div>
+      </div>} />
+      <nav className="content-library-nav" aria-label="资产视图">
+        <NavLink end to={prefix + "/assets"}>生成历史</NavLink>
+        <NavLink end to={prefix + "/assets/canvases"}>画布</NavLink>
+      </nav>
     </header>
   );
 }

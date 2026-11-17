@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { api, errorText } from "../api";
-import { Field } from "../components";
+import { DropdownSelect, Field } from "../components";
 import { useContent } from "./content-ui";
+import { ToolEmpty, ToolFilePicker, ToolPanelHeading } from "./ToolForm";
+import { ArrowRightIcon, ClockCounterClockwiseIcon, CloudArrowUpIcon, DownloadSimpleIcon, FileTextIcon,
+  FilmSlateIcon, FolderOpenIcon, InfoIcon, ShieldCheckIcon, UserCircleIcon, WaveformIcon } from "@phosphor-icons/react";
 
 type Slot = "video" | "audio" | "face" | "source";
 export type CloudMediaKind = "face-swap" | "auto-subtitles" | "burn-subtitles" | "lip-sync" | "voice-over"
@@ -12,24 +15,23 @@ type Job = {
   id: string; status: string; error: string | null; step: string | null; createdAt: string; artifacts: Artifact[];
 };
 type Handoff = { asset?: Artifact };
-const toolFields: Record<CloudMediaKind, { files: Slot[]; script?: true; srt?: true; consent?: string; cost: string }> = {
-  "face-swap": { files: ["video", "face"], consent: "我已获得视频及参考照片中人物的授权，并同意将素材提交至火山引擎进行人脸处理。",
-    cost: "参考价 ¥0.80／分钟，按输入视频时长计费。" },
-  "auto-subtitles": { files: ["source"], cost: "参考价 ¥0.03／分钟，按输入时长计费。素材提交至火山引擎处理。" },
-  "burn-subtitles": { files: ["video"], srt: true, cost: "应用内压制，无外部接口费用。" },
+const toolFields: Record<CloudMediaKind, { files: Slot[]; script?: true; srt?: true; consent?: string; note?: string }> = {
+  "face-swap": { files: ["video", "face"], consent: "我已获得视频及参考照片中人物的授权，并同意将素材提交至火山引擎进行人脸处理。" },
+  "auto-subtitles": { files: ["source"], note: "素材会提交至火山引擎处理。" },
+  "burn-subtitles": { files: ["video"], srt: true },
   "lip-sync": { files: ["video", "audio"], consent: "我已获得出镜人物和音频权利人的授权，并同意将素材提交至火山引擎进行口型合成。",
-    cost: "参考价 ¥1.00／分钟，按输出时长计费。视频应至少与音频等长。" },
-  "voice-over": { files: [], script: true, cost: "使用豆包标准女声。参考价 ¥3.00／万字。口播稿提交至豆包语音处理。" },
+    note: "视频应至少与驱动音频等长。" },
+  "voice-over": { files: [], script: true, note: "口播稿会提交至豆包语音，使用标准女声。" },
   "presenter-video": { files: ["video"], script: true, consent: "我已获得出镜人物的授权，并同意将视频和口播稿提交至火山引擎处理。",
-    cost: "包含配音、口型对齐、语音识别和字幕压制。配音比素材长时，画面会往复播放以匹配完整口播。" },
-  "translate-subtitles": { files: [], srt: true, cost: "使用企业文本模型，按模型用量计费。每次最多 60 条字幕、合计 1800 字。" },
+    note: "配音长于原视频时，画面会往复播放以匹配完整口播。" },
+  "translate-subtitles": { files: [], srt: true, note: "使用企业文本模型。每次最多 60 条字幕，合计 1800 字。" },
 };
-const fileFields: Record<Slot, { label: string; accept: string }> = {
-  video: { label: "视频（MP4）", accept: ".mp4,video/mp4" },
-  audio: { label: "驱动音频（MP3、WAV）", accept: ".mp3,.wav,audio/mpeg,audio/wav" },
-  face: { label: "参考人像（JPG、PNG）", accept: ".jpg,.jpeg,.png,image/jpeg,image/png" },
-  source: { label: "视频或音频（MP4、MP3、WAV）", accept: ".mp4,.mp3,.wav,video/mp4,audio/mpeg,audio/wav" },
-};
+const fileFields = {
+  video: { label: "视频", accept: ".mp4,video/mp4", hint: "MP4 · 最长 3 分钟 · 最大 32 MB", icon: FilmSlateIcon },
+  audio: { label: "驱动音频", accept: ".mp3,.wav,audio/mpeg,audio/wav", hint: "MP3 / WAV · 最长 3 分钟 · 最大 8 MB", icon: WaveformIcon },
+  face: { label: "参考人像", accept: ".jpg,.jpeg,.png,image/jpeg,image/png", hint: "JPG / PNG · 最大 8 MB", icon: UserCircleIcon },
+  source: { label: "视频或音频", accept: ".mp4,.mp3,.wav,video/mp4,audio/mpeg,audio/wav", hint: "最长 3 分钟 · MP4 最大 32 MB · MP3 / WAV 最大 8 MB", icon: CloudArrowUpIcon },
+} satisfies Record<Slot, { label: string; accept: string; hint: string; icon: typeof FilmSlateIcon }>;
 const stepLabels: Record<string, string> = {
   voice: "合成配音", face: "视频换脸", lips: "对齐口型", asr: "识别字幕", burn: "压制字幕", label: "标记并保存成片", translate: "翻译字幕",
 };
@@ -51,7 +53,8 @@ export function CloudMediaTool({ kind }: { kind: CloudMediaKind }) {
   const [language, setLanguage] = useState("en");
   const [consent, setConsent] = useState(false);
   const [blocker, setBlocker] = useState<string | null | undefined>(undefined);
-  const [jobs, setJobs] = useState<Job[]>([]);
+  const [jobs, setJobs] = useState<Job[]>();
+  const [srtFilename, setSrtFilename] = useState("");
   const [loadError, setLoadError] = useState("");
   const [error, setError] = useState("");
   const [loadingSrt, setLoadingSrt] = useState(false);
@@ -95,7 +98,7 @@ export function CloudMediaTool({ kind }: { kind: CloudMediaKind }) {
     fetch(assetUrl(artifact.id), { signal: controller.signal }).then((response) => {
       if (!response.ok) throw Error("无法读取历史字幕");
       return response.text();
-    }).then((value) => { setSrt(value); attempt.current = undefined; })
+    }).then((value) => { setSrt(value); setSrtFilename(artifact.filename); attempt.current = undefined; })
       .catch((e) => { if (!controller.signal.aborted) setError(errorText(e)); })
       .finally(() => { if (!controller.signal.aborted) setLoadingSrt(false); });
     return () => controller.abort();
@@ -108,14 +111,20 @@ export function CloudMediaTool({ kind }: { kind: CloudMediaKind }) {
   function changeFile(slot: Slot, file: File | undefined) {
     setError("");
     attempt.current = undefined;
-    if (linked && linkedSlot === slot) setLinked(undefined);
-    setFiles((current) => ({ ...current, [slot]: undefined }));
-    if (!file) return;
-    const limit = slot === "video" || slot === "source" && isVideo(file) ? 32 : 8;
-    if (file.size < 1 || file.size > limit * 1024 * 1024) {
-      setError("请选择不超过 " + limit + " MB 的文件");
-      return;
+    if (file) {
+      const accepted = fileFields[slot].accept.split(",").some((type) =>
+        type.startsWith(".") ? file.name.toLowerCase().endsWith(type) : file.type === type);
+      if (!accepted) {
+        setError("请选择“" + fileFields[slot].label + "”支持的文件格式");
+        return;
+      }
+      const limit = slot === "video" || slot === "source" && isVideo(file) ? 32 : 8;
+      if (file.size < 1 || file.size > limit * 1024 * 1024) {
+        setError(file.size < 1 ? "文件为空，请选择其他文件" : "请选择不超过 " + limit + " MB 的文件");
+        return;
+      }
     }
+    if (linked && linkedSlot === slot) setLinked(undefined);
     setFiles((current) => ({ ...current, [slot]: file }));
   }
 
@@ -153,7 +162,7 @@ export function CloudMediaTool({ kind }: { kind: CloudMediaKind }) {
         submission.body = fields;
       }
       const job = await api.post<Job>(root + "/jobs", submission.body, { timeoutMs: 35000 });
-      setJobs((old) => [job, ...old.filter((item) => item.id !== job.id)]);
+      setJobs((old) => [job, ...(old ?? []).filter((item) => item.id !== job.id)]);
       setConsent(false);
       attempt.current = undefined;
     } catch (e) {
@@ -169,88 +178,110 @@ export function CloudMediaTool({ kind }: { kind: CloudMediaKind }) {
     <Link to={prefix + "/tools/" + target} state={{ asset: artifact } satisfies Handoff}>{title}</Link>
   );
 
+  const pendingReason = blocker === undefined ? "正在检查工具可用性…"
+    : loadingSrt ? "正在读取字幕…"
+    : config.files.some((slot) => !files[slot] && !(linked && linkedSlot === slot)) ? "请先添加所需素材"
+    : config.script && !text.trim() ? "请填写口播稿"
+    : config.srt && !srt.trim() ? "请添加 SRT 字幕"
+    : config.consent && !consent ? "请确认素材授权" : "";
+  const submitLabel = {
+    "face-swap": "开始换脸", "auto-subtitles": "识别字幕", "burn-subtitles": "压制字幕",
+    "lip-sync": "开始对齐", "voice-over": "生成配音", "presenter-video": "生成口播成片",
+    "translate-subtitles": "翻译字幕",
+  }[kind];
+
   return (
-    <>
+    <div className="content-media-layout">
       <form className="content-writing-form content-cloud-media-form" onSubmit={submit}>
-        <p className="content-tool-description">{config.cost}{kind === "presenter-video" ? " 参考价 ¥3／万字，口型与识别合计约 ¥1.03／分钟。" : ""}</p>
-        <fieldset disabled={busy}>
-          {config.files.map((slot) => (
-            <Field key={slot} label={slot === "video" && config.consent ? "单人出镜视频（MP4）" : fileFields[slot].label}>
-              <input type="file" accept={fileFields[slot].accept} onChange={(event) => changeFile(slot, event.target.files?.[0])} />
-              {linked && linkedSlot === slot && <span>已选历史结果 {linked.filename}</span>}
-            </Field>
-          ))}
-          {config.files.length > 0 && <p className="content-tool-description">视频及音频最长 3 分钟。MP4 最大 32 MB，音频与图片最大 8 MB。</p>}
-          {config.script && (
-            <Field label="口播稿（最多 800 字）">
-              <textarea rows={5} maxLength={800} value={text} placeholder="粘贴需要朗读的内容"
-                onChange={(event) => { setText(event.target.value); edit(); }} />
-            </Field>
-          )}
-          {config.srt && (
-            <>
-              <Field label="导入 SRT">
-                <input type="file" accept=".srt" onChange={async (event) => {
-                  const file = event.target.files?.[0];
-                  if (!file) return;
+        <ToolPanelHeading title="处理设置" icon={FolderOpenIcon} />
+        <div className="tool-panel-body">
+          <fieldset disabled={busy} aria-label="素材与参数">
+            {config.files.length > 0 && <div className="tool-file-grid">
+              {config.files.map((slot) => {
+                const field = fileFields[slot];
+                const historical = linked && linkedSlot === slot ? linked : undefined;
+                const selected = files[slot]?.name ?? historical?.filename;
+                return <ToolFilePicker key={slot} {...field}
+                  label={slot === "video" && config.consent ? "单人出镜视频" : field.label}
+                  selected={selected} linked={Boolean(historical)} onPick={(file) => changeFile(slot, file)}
+                  onClear={() => changeFile(slot, undefined)} />;
+              })}
+            </div>}
+            {config.script && <Field label="口播稿">
+              <textarea rows={5} maxLength={800} value={text} placeholder="输入或粘贴需要朗读的内容"
+                aria-label="口播稿" aria-describedby="tool-script-count" onChange={(event) => { setText(event.target.value); edit(); }} />
+              <small id="tool-script-count" className="tool-field-count">{text.length} / 800 字</small>
+            </Field>}
+            {config.srt && <>
+              <ToolFilePicker label="导入字幕（选填）" hint="SRT · 最大 512 KB" accept=".srt"
+                icon={FileTextIcon} compact disabled={loadingSrt} selected={srtFilename}
+                onPick={async (file) => {
                   if (file.size > 512 * 1024) { setError("SRT 文件最多 512 KB"); return; }
                   setLoadingSrt(true);
                   try {
                     const source = await file.text();
                     if (source.length > 180000) throw Error("SRT 字幕内容过长");
                     setSrt(source);
+                    setSrtFilename(file.name);
                     edit();
                   } catch (e) { setError(errorText(e)); }
                   finally { setLoadingSrt(false); }
                 }} />
-              </Field>
               <Field label="SRT 字幕">
-                <textarea rows={7} maxLength={180000} value={srt} disabled={loadingSrt}
+                <textarea rows={6} maxLength={180000} value={srt} disabled={loadingSrt}
                   placeholder={"1\n00:00:00,000 --> 00:00:02,000\n欢迎观看"}
-                  onChange={(event) => { setSrt(event.target.value); edit(); }} />
+                  onChange={(event) => { setSrt(event.target.value); setSrtFilename(""); edit(); }} />
               </Field>
-            </>
-          )}
-          {kind === "translate-subtitles" && (
-            <Field label="目标语言">
-              <select value={language} onChange={(event) => { setLanguage(event.target.value); edit(); }}>
+            </>}
+            {kind === "translate-subtitles" && <Field label="目标语言">
+              <DropdownSelect value={language} onChange={(event) => { setLanguage(event.target.value); edit(); }}>
                 {choices.map(([code, label]) => <option key={code} value={code}>{label}</option>)}
-              </select>
-            </Field>
-          )}
-          {config.consent && (
-            <label className="content-cloud-media-consent">
-              <input type="checkbox" checked={consent} onChange={(event) => {
-                setConsent(event.target.checked);
-                if (!attempt.current?.body) edit();
-              }} />
-              {config.consent}
-            </label>
-          )}
-        </fieldset>
-        {blocker && <p role="status" className="content-tool-description">{blocker}</p>}
-        {error && <p role="alert">{error}</p>}
-        <button type="submit" className="primary" disabled={blocker !== null || !ready || busy || loadingSrt}>
-          {busy ? "正在提交…" : kind === "burn-subtitles" ? "压制字幕" : "开始处理"}
-        </button>
+              </DropdownSelect>
+            </Field>}
+            {config.consent && <div className="content-cloud-media-consent">
+              <span><ShieldCheckIcon size={19} aria-hidden="true" />素材授权</span>
+              <label>
+                <input type="checkbox" checked={consent} onChange={(event) => {
+                  setConsent(event.target.checked);
+                  if (!attempt.current?.body) edit();
+                }} />
+                {config.consent}
+              </label>
+            </div>}
+          </fieldset>
+          {blocker && <p role="status" className="tool-message">{blocker}</p>}
+          {error && <p role="alert" className="tool-message" data-error>{error}</p>}
+        </div>
+        <div className="tool-panel-footer">
+          {config.note && <div className="tool-note"><InfoIcon size={17} aria-hidden="true" /><p>{config.note}</p></div>}
+          <div className="tool-submit">
+            {!busy && !blocker && pendingReason && <span>{pendingReason}</span>}
+            <button type="submit" className="primary" disabled={blocker !== null || !ready || busy || loadingSrt}>
+              {busy ? "正在提交…" : submitLabel}<ArrowRightIcon size={16} aria-hidden="true" />
+            </button>
+          </div>
+        </div>
       </form>
       <section className="content-media-history" aria-label="处理记录">
-        <h2>处理记录</h2>
-        {loadError && <p role="status">{loadError}</p>}
-        {!jobs.length && !loadError && <p className="content-tool-description">暂无处理记录</p>}
-        {jobs.map((job) => (
+        <ToolPanelHeading title="处理记录" icon={ClockCounterClockwiseIcon} />
+        <div className="tool-history-body">
+        {loadError && <p role="status" className="tool-message">{loadError}</p>}
+        {!jobs && !loadError && <p role="status" className="tool-history-loading">正在读取处理记录…</p>}
+        {jobs?.length === 0 && !loadError && <ToolEmpty icon={ClockCounterClockwiseIcon} title="暂无处理记录">提交后，可在这里查看进度和下载结果。</ToolEmpty>}
+        {jobs?.map((job) => (
           <article key={job.id} className="content-media-job">
             <div className="content-media-job-heading">
-              <strong>{statuses[job.status] ?? job.status}{isActive(job) && job.step ? " · " + stepLabels[job.step] : ""}</strong>
+              <strong className="tool-job-status" data-status={job.status}>{statuses[job.status] ?? job.status}</strong>
               <time dateTime={job.createdAt}>{new Date(job.createdAt).toLocaleString("zh-CN")}</time>
             </div>
+            {isActive(job) && job.step && stepLabels[job.step] && <p className="content-tool-description">{stepLabels[job.step]}</p>}
             {job.error && <p className="content-tool-description">{job.error}</p>}
             {job.artifacts.map((artifact) => (
               <div key={artifact.id} className="content-media-result">
                 {artifact.mime === "video/mp4" && <video controls playsInline preload="none" src={assetUrl(artifact.id)} aria-label={artifact.filename} />}
                 {artifact.mime === "audio/mpeg" && <audio controls preload="none" src={assetUrl(artifact.id)} aria-label={artifact.filename} />}
                 <div className="content-media-result-links">
-                  <a download={artifact.filename} href={assetUrl(artifact.id)}>下载{artifact.filename}</a>
+                  <a download={artifact.filename} href={assetUrl(artifact.id)}><DownloadSimpleIcon size={16} aria-hidden="true" />下载 {artifact.filename}</a>
                   {artifact.mime === "audio/mpeg" && useResult(artifact, "lip-sync", "用于口型对齐")}
                   {artifact.mime === "video/mp4" && kind !== "burn-subtitles" && useResult(artifact, "burn-subtitles", "添加字幕")}
                   {artifact.filename.endsWith(".srt") && useResult(artifact, "burn-subtitles", "压制到视频")}
@@ -260,7 +291,8 @@ export function CloudMediaTool({ kind }: { kind: CloudMediaKind }) {
             ))}
           </article>
         ))}
+        </div>
       </section>
-    </>
+    </div>
   );
 }
